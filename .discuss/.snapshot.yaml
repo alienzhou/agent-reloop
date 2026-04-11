@@ -1,0 +1,14 @@
+version: 1
+config:
+  stale_threshold: 3
+discussions:
+  2026-04-11/reloop-framework-architecture:
+    outline:
+      mtime: 1775931267.3815587
+      change_count: 0
+    decisions:
+    - name: D01-reloop-framework-architecture.md
+      mtime: 1775931289.4323528
+    notes:
+    - name: architecture-diagram-reading.md
+      mtime: 1775931276.6791174

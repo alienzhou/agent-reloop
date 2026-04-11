@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+._*
+
+# IDE / Editor
+.obsidian/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+
+# Agent tooling (session data, not project config)
+.agentlens/data/
+
+# Logs & temp
+*.log
+*.tmp
+*.swp
+*~

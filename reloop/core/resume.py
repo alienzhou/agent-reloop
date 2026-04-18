@@ -195,20 +195,21 @@ def rollback_incomplete_run(project_root: Path, run_id: str) -> None:
         )
         logger.info(f"Git reset to {prev_commit}")
     elif run_commit_idx == 0:
-        # 这是第一个 run，回滚到初始 commit
-        # 需要找到初始 commit（通常是第一个）
-        if commits:
-            first_commit = commits[0].split()[0]
-            # 但这不是该 run 的 commit，所以需要找到更早的
-            # 使用 git rev-list --max-parents=0 HEAD 找到真正的初始 commit
-            result = subprocess.run(
-                ["git", "rev-list", "--max-parents=0", "HEAD"],
-                cwd=str(project_root),
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                root_commit = result.stdout.strip().split()[0]
+        # 这是第一个 run commit，无法回滚到之前的状态
+        # 检查是否有更早的 commit（如初始 commit）
+        result = subprocess.run(
+            ["git", "rev-list", "--max-parents=0", "HEAD"],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            root_commit = result.stdout.strip() if result.stdout.strip() else None
+            run_commit_hash = commits[0].split()[0] if commits else None
+            
+            # 只有当 root commit 不同于 run commit 时才回滚
+            # root_commit 是完整的 40 字符 hash，run_commit_hash 是缩写的 ~7 字符 hash
+            if root_commit and run_commit_hash and not root_commit.startswith(run_commit_hash):
                 subprocess.run(
                     ["git", "reset", "--hard", root_commit],
                     cwd=str(project_root),
@@ -216,6 +217,12 @@ def rollback_incomplete_run(project_root: Path, run_id: str) -> None:
                     check=True,
                 )
                 logger.info(f"Git reset to root commit {root_commit}")
+            else:
+                # 无法回滚，该 run commit 就是根节点
+                logger.warning(
+                    f"Cannot rollback git history for {run_id}: "
+                    "it is the first commit. Use 'full_cleanup' to completely reset."
+                )
 
     # 删除 run 目录
     if run_dir.exists():

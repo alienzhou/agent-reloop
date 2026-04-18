@@ -1,0 +1,26 @@
+# Reloop 配置文件示例
+# 复制为 reloop.yaml 并修改
+
+driver:
+  # Driver 类型: mock (测试) | flick (生产)
+  type: flick
+
+  # FlickDriver 配置
+  flick:
+    # Duet Workspace ID 或路径（必需）
+    # 可通过 `flick link workspace list` 查看
+    workspace: "d2d9e0a8xxxxxxxxxxxxxxxxxxxxxxxx"
+    # 或使用路径
+    # workspace: "/path/to/project"
+
+    # 可选：模型选择
+    # 可选值: CLAUDE_4_5, CLAUDE_4_6, AUTO, 等
+    model: "CLAUDE_4_5"
+
+    # 可选：模式选择
+    # 可选值: agent, plan, deep, discuss, ask
+    mode: "agent"
+
+    # 可选：JSON 输出（默认 true）
+    # 启用后输出结构化 JSON，便于解析
+    json_output: true

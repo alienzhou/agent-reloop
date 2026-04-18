@@ -87,12 +87,20 @@ def run(
     no_git_commit: bool = typer.Option(
         False, "--no-git-commit", help="禁用自动 Git commit"
     ),
+    config: Path = typer.Option(
+        None, "--config", "-c", help="配置文件路径 (默认: ./reloop.yaml)"
+    ),
 ) -> None:
     """运行 Reloop 迭代循环。"""
+    from reloop.config import load_config
     from reloop.core.loop import run_loop
-    from reloop.drivers.mock import MockDriver
+    from reloop.drivers import create_driver
 
     project_root = Path.cwd()
+
+    # 加载配置
+    cfg = load_config(config)
+    driver_type = cfg.driver_type
 
     # 读取 INTENT
     if intent_file:
@@ -118,10 +126,13 @@ def run(
             print("   请创建 task/EVAL_SKILL.md 或使用 --eval 指定")
             raise typer.Exit(1)
 
-    # 使用 Mock Driver（实际使用时替换为真实 Driver）
-    # TODO: 支持配置真实 Driver
-    print("⚠️  使用 Mock Driver（仅用于演示）")
-    executor_driver = MockDriver(responses=["Executor output", "Evaluator output", "passed"])
+    # 创建 Driver
+    try:
+        executor_driver = create_driver(cfg)
+        print(f"✓ 使用 Driver: {driver_type}")
+    except Exception as e:
+        print(f"❌ 创建 Driver 失败: {e}")
+        raise typer.Exit(1)
 
     try:
         result = run_loop(

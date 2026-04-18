@@ -358,6 +358,24 @@ class TestPromptResumeChoice:
         )
         assert result == ResumeChoice.CONTINUE
 
+    def test_interactive_keyboard_interrupt(self, monkeypatch, capsys):
+        """交互模式下 Ctrl+C 应该抛出 SystemExit(0)。"""
+        def raise_keyboard_interrupt(_):
+            raise KeyboardInterrupt()
+
+        monkeypatch.setattr("builtins.input", raise_keyboard_interrupt)
+
+        with pytest.raises(SystemExit) as exc_info:
+            prompt_resume_choice(
+                RunStatus.INTERRUPTED,
+                last_run_id="run-001",
+                interactive=True,
+            )
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "已取消" in captured.out
+
 
 # === 辅助函数 ===
 

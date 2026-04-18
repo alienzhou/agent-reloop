@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 
 class Driver:
@@ -18,14 +18,16 @@ class Driver:
         workdir: str,
         output: Optional[str] = None,
         timeout: Optional[int] = None,
+        stream_callback: Optional[Callable[[str], None]] = None,
     ) -> str:
         """调用 Agent CLI 执行 prompt。
 
         Args:
-            prompt:   完整的 prompt 字符串（Skill 内容 + 用户 prompt 已内联）
-            workdir:  Agent 工作目录
-            output:   可选，输出文件路径
-            timeout:  可选，超时秒数
+            prompt: 完整的 prompt 字符串（Skill 内容 + 用户 prompt 已内联）
+            workdir: Agent 工作目录
+            output: 可选，输出文件路径
+            timeout: 可选，超时秒数
+            stream_callback: 可选，流式输出回调函数
 
         Returns:
             Agent 的输出文本

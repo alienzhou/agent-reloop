@@ -3,16 +3,31 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 
-from reloop.core.checker import parse_checker_result
+from reloop.core.checker import extract_checker_explanation, parse_checker_result
 from reloop.core.git import auto_commit_after_execution
+from reloop.core.logging import (
+    AgentLogger,
+    StreamOutput,
+    get_run_log_paths,
+    log_driver_call,
+    setup_system_logging,
+)
 from reloop.core.prompts import (
     build_checker_prompt,
     build_evaluator_prompt,
     build_executor_prompt,
+)
+from reloop.core.resume import (
+    RunStatus,
+    detect_run_status,
+    full_cleanup,
+    get_last_run_id,
+    rollback_incomplete_run,
 )
 from reloop.core.workspace import init_workspace
 from reloop.drivers.base import Driver
@@ -54,6 +69,9 @@ def run_loop(
     checker_driver: Optional[Driver] = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
     enable_git_commit: bool = True,
+    fresh: bool = False,
+    interactive: bool = True,
+    stream_max_lines: int = 4,
 ) -> LoopResult:
     """执行 Reloop 迭代主循环。
 
@@ -69,10 +87,28 @@ def run_loop(
         checker_driver:   checker 使用的 Driver（默认复用 evaluator_driver）
         max_iterations:   最大迭代次数
         enable_git_commit: 是否启用自动 git commit
+        fresh:           强制从头开始（忽略历史状态）
+        interactive:     是否交互模式（提示用户选择）
+        stream_max_lines: 流式输出终端显示行数
 
     Returns:
         LoopResult 包含成功/失败、轮数、run_id 列表
     """
+    # 初始化系统日志
+    setup_system_logging(project_root / "logs" / "reloop.log")
+
+    # 检测状态并处理恢复
+    if not fresh:
+        status = detect_run_status(project_root)
+        if status != RunStatus.FRESH:
+            choice = _handle_resume(project_root, status, interactive)
+            if choice == "reset":
+                full_cleanup(project_root)
+            elif status == RunStatus.INTERRUPTED:
+                last_run_id = get_last_run_id(project_root)
+                if last_run_id:
+                    rollback_incomplete_run(project_root, last_run_id)
+
     if evaluator_driver is None:
         evaluator_driver = executor_driver
     if checker_driver is None:
@@ -91,6 +127,9 @@ def run_loop(
         run_ids.append(run_id)
         logger.info("Workspace initialized: %s", run_dir)
 
+        # 获取日志路径
+        log_paths = get_run_log_paths(project_root, run_id)
+
         # ② Executor
         exec_spec = _EXEC_SPEC_TEMPLATE.format(
             solution_dir=str(project_root / "task" / "solution"),
@@ -99,7 +138,34 @@ def run_loop(
         )
         executor_prompt = build_executor_prompt(intent, last_eval_result, exec_spec)
         logger.info("Running executor...")
-        executor_driver.run(prompt=executor_prompt, workdir=workdir)
+
+        # 记录 prompt
+        _log_prompt(log_paths["prompt"], "EXECUTOR", executor_prompt)
+
+        # 流式输出
+        executor_stream = StreamOutput(
+            log_path=log_paths["executor"],
+            max_lines=stream_max_lines,
+        )
+        print(f"[{time.strftime('%H:%M:%S')}] 📝 Executor running...")
+        executor_output = executor_driver.run(
+            prompt=executor_prompt,
+            workdir=workdir,
+            stream_callback=executor_stream.write,
+        )
+        executor_stream.finalize()
+        print(f"[{time.strftime('%H:%M:%S')}] ✅ Executor done")
+
+        # 记录 driver call
+        log_driver_call(
+            log_path=log_paths["driver"],
+            command=["executor", "agent"],
+            workdir=workdir,
+            prompt=executor_prompt,
+            output=executor_output,
+            exit_code=0,
+            duration=0.0,  # 实际实现时记录真实时间
+        )
 
         # git commit after executor
         if enable_git_commit:
@@ -109,7 +175,31 @@ def run_loop(
         artifacts_dir = str(run_dir / "artifacts")
         evaluator_prompt = build_evaluator_prompt(artifacts_dir, eval_skill)
         logger.info("Running evaluator...")
-        eval_output = evaluator_driver.run(prompt=evaluator_prompt, workdir=workdir)
+
+        _log_prompt(log_paths["prompt"], "EVALUATOR", evaluator_prompt)
+
+        evaluator_stream = StreamOutput(
+            log_path=log_paths["evaluator"],
+            max_lines=stream_max_lines,
+        )
+        print(f"[{time.strftime('%H:%M:%S')}] 🔍 Evaluator running...")
+        eval_output = evaluator_driver.run(
+            prompt=evaluator_prompt,
+            workdir=workdir,
+            stream_callback=evaluator_stream.write,
+        )
+        evaluator_stream.finalize()
+        print(f"[{time.strftime('%H:%M:%S')}] ✅ Evaluator done")
+
+        log_driver_call(
+            log_path=log_paths["driver"],
+            command=["evaluator", "agent"],
+            workdir=workdir,
+            prompt=evaluator_prompt,
+            output=eval_output,
+            exit_code=0,
+            duration=0.0,
+        )
 
         # 保存评估报告
         report_path = run_dir / "eval-report" / "report.md"
@@ -119,10 +209,50 @@ def run_loop(
         # ④ Checker
         checker_prompt = build_checker_prompt(eval_output)
         logger.info("Running checker...")
-        checker_output = checker_driver.run(prompt=checker_prompt, workdir=workdir)
+
+        _log_prompt(log_paths["prompt"], "CHECKER", checker_prompt)
+
+        checker_stream = StreamOutput(
+            log_path=log_paths["checker"],
+            max_lines=stream_max_lines,
+        )
+        print(f"[{time.strftime('%H:%M:%S')}] ✅ Checker running...")
+        checker_output = checker_driver.run(
+            prompt=checker_prompt,
+            workdir=workdir,
+            stream_callback=checker_stream.write,
+        )
+        checker_stream.finalize()
 
         passed = parse_checker_result(checker_output)
-        logger.info("Round %d result: %s", round_num, "PASSED" if passed else "FAILED")
+        explanation = extract_checker_explanation(checker_output)
+
+        log_driver_call(
+            log_path=log_paths["driver"],
+            command=["checker", "agent"],
+            workdir=workdir,
+            prompt=checker_prompt,
+            output=checker_output,
+            exit_code=0,
+            duration=0.0,
+        )
+
+        if passed:
+            print(f"[{time.strftime('%H:%M:%S')}] ✅ Round {round_num}: PASSED")
+            logger.info("Round %d result: PASSED", round_num)
+        else:
+            print(f"[{time.strftime('%H:%M:%S')}] ❌ Round {round_num}: FAILED")
+            logger.info("Round %d result: FAILED", round_num)
+
+        # 打印日志路径提示
+        print(f"""
+📄 Full logs for {run_id}:
+   - Driver:    {log_paths['driver']}
+   - Executor:  {log_paths['executor']}
+   - Evaluator: {log_paths['evaluator']}
+   - Checker:   {log_paths['checker']}
+   - Prompt:    {log_paths['prompt']}
+""")
 
         if passed:
             return LoopResult(
@@ -135,3 +265,68 @@ def run_loop(
     raise MaxIterationsExceededError(
         f"Loop did not converge after {max_iterations} iterations"
     )
+
+
+def _handle_resume(
+    project_root: Path,
+    status: RunStatus,
+    interactive: bool,
+) -> str:
+    """处理恢复逻辑。
+
+    Args:
+        project_root: 项目根目录
+        status: 当前状态
+        interactive: 是否交互模式
+
+    Returns:
+        用户选择：continue 或 reset
+    """
+    last_run_id = get_last_run_id(project_root)
+    status_text = {
+        RunStatus.COMPLETED: "已完成（通过）",
+        RunStatus.FAILED: "未通过",
+        RunStatus.INTERRUPTED: "已中断",
+    }.get(status, "未知")
+
+    print(f"""
+检测到已有运行记录：
+  - 最近运行: {last_run_id or '无'}
+  - 状态: {status_text}
+
+请选择：
+  [1] 继续运行（从上次状态继续）
+  [2] 完全重置并从头运行
+""")
+
+    if not interactive:
+        print("使用默认选择: 继续运行")
+        return "continue"
+
+    try:
+        choice = input("请输入选择 [1/2] (默认: 1): ").strip()
+    except EOFError:
+        choice = ""
+
+    if choice == "2":
+        return "reset"
+
+    return "continue"
+
+
+def _log_prompt(log_path: Path, role: str, prompt: str) -> None:
+    """记录 prompt 到日志文件。
+
+    Args:
+        log_path: prompt 日志文件路径
+        role: 角色（EXECUTOR/EVALUATOR/CHECKER）
+        prompt: prompt 内容
+    """
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"=== {role} PROMPT ({timestamp}) ===\n")
+        f.write(prompt)
+        f.write("\n=== END ===\n\n")

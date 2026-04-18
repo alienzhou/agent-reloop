@@ -75,6 +75,18 @@ def detect_single_run_status(project_root: Path, run_dir: Path) -> RunStatus:
         logger.info(f"No eval report found for {run_id}, marking as interrupted")
         return RunStatus.INTERRUPTED
 
+    # 先检查是否是 Git 仓库
+    git_check = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        cwd=str(project_root),
+        capture_output=True,
+        text=True,
+    )
+    if git_check.returncode != 0:
+        # 非 Git 仓库，无法通过 Git 状态判断，保守返回 FRESH
+        logger.info(f"{project_root} is not a git repository, treating as fresh")
+        return RunStatus.FRESH
+
     # 检查 Git commit 是否存在且匹配
     result = subprocess.run(
         ["git", "log", "-1", "--format=%s"],
@@ -83,7 +95,8 @@ def detect_single_run_status(project_root: Path, run_dir: Path) -> RunStatus:
         text=True,
     )
     if result.returncode != 0:
-        logger.warning(f"Failed to get git log for {project_root}")
+        # Git 仓库但命令失败（如空仓库或其他错误）
+        logger.warning(f"Git command failed for {project_root}: {result.stderr.strip()}")
         return RunStatus.INTERRUPTED
 
     last_commit = result.stdout.strip()

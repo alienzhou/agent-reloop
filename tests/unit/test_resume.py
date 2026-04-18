@@ -121,6 +121,64 @@ class TestDetectSingleRunStatus:
         assert status == RunStatus.FAILED
 
 
+class TestDetectSingleRunStatusGitBoundary:
+    """测试 Git 边界处理 — 区分非 Git 仓库和 Git 命令失败。"""
+
+    def test_non_git_repository_returns_fresh(self, tmp_path):
+        """非 Git 仓库目录应返回 FRESH 而非 INTERRUPTED。"""
+        # 不初始化 Git，只创建普通目录结构
+        run_dir = tmp_path / "run-sets" / "run-001"
+        _create_complete_run(run_dir, passed=True)
+        
+        status = detect_single_run_status(tmp_path, run_dir)
+        assert status == RunStatus.FRESH
+
+    def test_git_repo_with_no_commits_returns_interrupted(self, tmp_path):
+        """Git 仓库但没有任何 commit 时返回 INTERRUPTED（git log 会失败）。"""
+        # 仅 git init，不做任何 commit
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+        
+        run_dir = tmp_path / "run-sets" / "run-001"
+        _create_complete_run(run_dir, passed=True)
+        
+        status = detect_single_run_status(tmp_path, run_dir)
+        # 空仓库：git rev-parse --is-inside-work-tree 返回 true
+        # 但 git log -1 会失败（无 commit）
+        assert status == RunStatus.INTERRUPTED
+
+    def test_subdirectory_of_git_repo(self, tmp_path):
+        """子目录也应该被识别为 Git 仓库内部。"""
+        _init_git_repo(tmp_path)
+        
+        # 在子目录创建 run
+        subdir = tmp_path / "projects" / "sub"
+        subdir.mkdir(parents=True)
+        run_dir = subdir / "run-sets" / "run-001"
+        _create_complete_run(run_dir, passed=True)
+        
+        # 在根目录 commit
+        _commit_for_run(tmp_path, "run-001")
+        
+        # 子目录检测应该能识别 Git 状态
+        status = detect_single_run_status(subdir, run_dir)
+        # 由于 commit 在 tmp_path，而不在 subdir，commit 信息会匹配
+        assert status == RunStatus.COMPLETED
+
+    def test_git_directory_deleted_returns_fresh(self, tmp_path):
+        """曾经是 Git 仓库但 .git 被删除的情况。"""
+        _init_git_repo(tmp_path)
+        
+        run_dir = tmp_path / "run-sets" / "run-001"
+        _create_complete_run(run_dir, passed=True)
+        
+        # 删除 .git 目录
+        import shutil
+        shutil.rmtree(tmp_path / ".git")
+        
+        status = detect_single_run_status(tmp_path, run_dir)
+        assert status == RunStatus.FRESH
+
+
 class TestGetLastRunId:
     """测试获取最近 run ID。"""
 

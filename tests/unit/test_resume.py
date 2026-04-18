@@ -6,12 +6,14 @@ from pathlib import Path
 import pytest
 
 from reloop.core.resume import (
+    ResumeChoice,
     RunStatus,
     detect_run_status,
     detect_single_run_status,
     full_cleanup,
     get_last_run_id,
     get_run_before,
+    prompt_resume_choice,
     rollback_incomplete_run,
 )
 
@@ -273,6 +275,88 @@ class TestFullCleanup:
         full_cleanup(tmp_path, keep_logs=True, keep_solution=True)
         
         assert (solution_dir / "main.py").exists()
+
+
+class TestPromptResumeChoice:
+    """测试用户交互选择。"""
+
+    def test_non_interactive_returns_continue(self):
+        """非交互模式返回默认值 CONTINUE。"""
+        result = prompt_resume_choice(
+            RunStatus.INTERRUPTED,
+            last_run_id="run-001",
+            interactive=False,
+        )
+        assert result == ResumeChoice.CONTINUE
+
+    def test_non_interactive_completed_returns_continue(self):
+        """非交互模式下已完成状态也返回 CONTINUE。"""
+        result = prompt_resume_choice(
+            RunStatus.COMPLETED,
+            last_run_id="run-002",
+            interactive=False,
+        )
+        assert result == ResumeChoice.CONTINUE
+
+    def test_non_interactive_failed_returns_continue(self):
+        """非交互模式下失败状态也返回 CONTINUE。"""
+        result = prompt_resume_choice(
+            RunStatus.FAILED,
+            last_run_id="run-003",
+            interactive=False,
+        )
+        assert result == ResumeChoice.CONTINUE
+
+    def test_interactive_default_choice(self, monkeypatch):
+        """交互模式，直接回车使用默认值。"""
+        monkeypatch.setattr("builtins.input", lambda _: "")
+        result = prompt_resume_choice(
+            RunStatus.FAILED,
+            last_run_id="run-002",
+            interactive=True,
+        )
+        assert result == ResumeChoice.CONTINUE
+
+    def test_interactive_choice_1(self, monkeypatch):
+        """交互模式，选择 1 返回 CONTINUE。"""
+        monkeypatch.setattr("builtins.input", lambda _: "1")
+        result = prompt_resume_choice(
+            RunStatus.INTERRUPTED,
+            last_run_id="run-001",
+            interactive=True,
+        )
+        assert result == ResumeChoice.CONTINUE
+
+    def test_interactive_choice_2(self, monkeypatch):
+        """交互模式，选择 2 返回 RESET。"""
+        monkeypatch.setattr("builtins.input", lambda _: "2")
+        result = prompt_resume_choice(
+            RunStatus.FAILED,
+            last_run_id="run-002",
+            interactive=True,
+        )
+        assert result == ResumeChoice.RESET
+
+    def test_interactive_invalid_then_valid(self, monkeypatch):
+        """交互模式，无效输入后输入有效值。"""
+        inputs = iter(["invalid", "3", "2"])
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+        result = prompt_resume_choice(
+            RunStatus.INTERRUPTED,
+            last_run_id="run-001",
+            interactive=True,
+        )
+        assert result == ResumeChoice.RESET
+
+    def test_interactive_no_last_run_id(self, monkeypatch):
+        """交互模式，没有 last_run_id 时也能正常工作。"""
+        monkeypatch.setattr("builtins.input", lambda _: "1")
+        result = prompt_resume_choice(
+            RunStatus.INTERRUPTED,
+            last_run_id=None,
+            interactive=True,
+        )
+        assert result == ResumeChoice.CONTINUE
 
 
 # === 辅助函数 ===

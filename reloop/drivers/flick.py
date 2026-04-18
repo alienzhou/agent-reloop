@@ -57,7 +57,7 @@ class FlickDriver(Driver):
         timeout: Optional[int] = None,
         stream_callback: Optional[Callable[[str], None]] = None,
     ) -> str:
-        """发送 prompt 到固定的 Duet Workspace。
+        """发送 prompt 到固定的 Duet Workspace，支持流式输出。
 
         Args:
             prompt: 完整的 prompt 字符串
@@ -73,6 +73,23 @@ class FlickDriver(Driver):
             FlickDriverError: 执行失败或超时
         """
         # 构建命令
+        cmd = self._build_command(prompt)
+
+        # 根据是否有回调选择执行模式
+        if stream_callback:
+            return self._run_with_streaming(cmd, workdir, timeout, stream_callback)
+        else:
+            return self._run_blocking(cmd, workdir, timeout)
+
+    def _build_command(self, prompt: str) -> list[str]:
+        """构建 flick 命令。
+
+        Args:
+            prompt: 要发送的 prompt
+
+        Returns:
+            完整的命令参数列表
+        """
         cmd = ["flick", "link", "prompt"]
 
         # 使用配置的 Workspace（固定）
@@ -88,8 +105,91 @@ class FlickDriver(Driver):
             cmd.append("--duet-json")
 
         cmd.append(prompt)
+        return cmd
 
-        # 执行命令
+    def _run_with_streaming(
+        self,
+        cmd: list[str],
+        workdir: str,
+        timeout: Optional[int],
+        stream_callback: Callable[[str], None],
+    ) -> str:
+        """流式执行，实时回调输出。
+
+        使用 subprocess.Popen 逐行读取输出，每行调用回调函数。
+
+        Args:
+            cmd: 完整的命令参数列表
+            workdir: 工作目录
+            timeout: 超时秒数
+            stream_callback: 每行输出的回调函数
+
+        Returns:
+            完整的输出文本
+
+        Raises:
+            FlickDriverError: 执行失败或超时
+        """
+        full_output: list[str] = []
+
+        try:
+            process = subprocess.Popen(
+                cmd,
+                cwd=workdir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,  # 行缓冲
+            )
+        except FileNotFoundError:
+            raise FlickDriverError("flick 命令未找到，请确保已安装 flick CLI")
+
+        try:
+            # 逐行读取输出
+            for line in process.stdout:
+                full_output.append(line)
+                stream_callback(line.rstrip("\n"))
+
+            # 等待进程结束
+            process.wait(timeout=timeout)
+
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()  # 确保进程完全终止
+            raise FlickDriverError(f"flick link prompt 超时 ({timeout}s)")
+
+        if process.returncode != 0:
+            raise FlickDriverError(
+                f"flick link prompt 失败 (exit {process.returncode})"
+            )
+
+        response = "".join(full_output).strip()
+
+        # JSON 处理（如果启用）
+        if self.json_output and response:
+            response = self._parse_json_response(response)
+
+        return response
+
+    def _run_blocking(
+        self,
+        cmd: list[str],
+        workdir: str,
+        timeout: Optional[int],
+    ) -> str:
+        """阻塞执行，等待完成后返回。
+
+        Args:
+            cmd: 完整的命令参数列表
+            workdir: 工作目录
+            timeout: 超时秒数
+
+        Returns:
+            完整的输出文本
+
+        Raises:
+            FlickDriverError: 执行失败或超时
+        """
         try:
             result = subprocess.run(
                 cmd,
@@ -108,18 +208,29 @@ class FlickDriver(Driver):
                 f"flick link prompt 失败 (exit {result.returncode}): {result.stderr}"
             )
 
-        # 处理输出
         response = result.stdout.strip()
 
-        # 如果启用 JSON 输出，解析并提取内容
+        # JSON 处理（如果启用）
         if self.json_output and response:
-            try:
-                data = json.loads(response)
-                # 根据实际返回结构提取内容
-                # 结构可能是 {"content": "..."} 或其他格式
-                if isinstance(data, dict):
-                    response = data.get("content", data.get("message", response))
-            except json.JSONDecodeError:
-                pass  # 非 JSON 输出，直接返回原始文本
+            response = self._parse_json_response(response)
 
+        return response
+
+    def _parse_json_response(self, response: str) -> str:
+        """解析 JSON 响应，提取内容字段。
+
+        Args:
+            response: 原始响应字符串
+
+        Returns:
+            提取的内容或原始响应
+        """
+        try:
+            data = json.loads(response)
+            # 根据实际返回结构提取内容
+            # 结构可能是 {"content": "..."} 或其他格式
+            if isinstance(data, dict):
+                return data.get("content", data.get("message", response))
+        except json.JSONDecodeError:
+            pass  # 非 JSON 输出，直接返回原始文本
         return response

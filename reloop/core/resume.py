@@ -21,6 +21,13 @@ class RunStatus(str, Enum):
     INTERRUPTED = "interrupted"  # 中断
 
 
+class ResumeChoice(str, Enum):
+    """恢复选择枚举。"""
+
+    CONTINUE = "continue"  # 继续运行
+    RESET = "reset"  # 完全重置
+
+
 def detect_run_status(project_root: Path) -> RunStatus:
     """检测项目状态。
 
@@ -287,3 +294,61 @@ def full_cleanup(project_root: Path, keep_logs: bool = False, keep_solution: boo
             logger.info("Removed system log")
 
     logger.info("Full cleanup completed")
+
+
+def prompt_resume_choice(
+    status: RunStatus,
+    last_run_id: Optional[str] = None,
+    interactive: bool = True,
+) -> ResumeChoice:
+    """提示用户选择恢复策略。
+
+    Args:
+        status: 当前项目状态
+        last_run_id: 最近的 run ID
+        interactive: 是否交互模式
+
+    Returns:
+        用户选择的恢复策略
+    """
+    # 非交互模式：使用默认选择
+    if not interactive:
+        return ResumeChoice.CONTINUE
+
+    # 构建状态描述
+    status_desc = {
+        RunStatus.COMPLETED: "已完成（通过）",
+        RunStatus.FAILED: "未通过",
+        RunStatus.INTERRUPTED: "已中断（未完成评估）",
+    }.get(status, "未知")
+
+    # 显示提示
+    print("\n检测到已有运行记录：")
+    if last_run_id:
+        print(f"  - 最近运行: {last_run_id}")
+    print(f"  - 状态: {status_desc}")
+    print()
+
+    # 特殊提示：已完成时
+    if status == RunStatus.COMPLETED:
+        print("⚠️  任务已成功完成")
+        print()
+
+    print("请选择：")
+    print("  [1] 继续运行（从上次状态继续）")
+    print("  [2] 完全重置并从头运行")
+    print()
+
+    # 获取用户输入
+    while True:
+        try:
+            choice = input("请输入选择 [1/2] (默认: 1): ").strip()
+            if choice == "" or choice == "1":
+                return ResumeChoice.CONTINUE
+            elif choice == "2":
+                return ResumeChoice.RESET
+            else:
+                print("无效输入，请输入 1 或 2")
+        except KeyboardInterrupt:
+            print("\n已取消")
+            raise SystemExit(0)

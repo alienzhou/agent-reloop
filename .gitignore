@@ -18,3 +18,9 @@ __pycache__/
 *.tmp
 *.swp
 *~
+
+# Demo workspace
+examples/_demo_workspace/
+
+# Egg-info
+*.egg-info/

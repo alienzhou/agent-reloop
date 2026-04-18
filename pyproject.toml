@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-reloop"
+version = "0.1.0"
+description = "A universal self-iterating framework for AI Agents"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-xdist>=3.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "real_agent: tests that require a real Agent CLI (deselect by default)",
+]
+addopts = "-m 'not real_agent'"
+
+[tool.hatch.build.targets.wheel]
+packages = ["reloop"]

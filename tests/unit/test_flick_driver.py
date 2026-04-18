@@ -292,3 +292,76 @@ class TestFlickDriverStreamingFileNotFound:
                     workdir="/tmp",
                     stream_callback=lambda x: None,
                 )
+
+
+class TestFlickDriverEdgeCases:
+    """测试边界条件和特殊场景。"""
+
+    def test_empty_output_returns_empty_string(self):
+        """阻塞模式空输出返回空字符串。"""
+        driver = FlickDriver(workspace="test-workspace", json_output=False)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = driver.run(prompt="test", workdir="/tmp")
+
+        assert result == ""
+
+    def test_streaming_empty_output(self):
+        """流式模式空输出返回空字符串。"""
+        driver = FlickDriver(workspace="test-workspace", json_output=False)
+
+        collected_lines = []
+
+        def callback(line: str):
+            collected_lines.append(line)
+
+        mock_process = MagicMock()
+        mock_process.stdout = iter([])  # 空输出
+        mock_process.returncode = 0
+        mock_process.wait.return_value = None
+
+        with patch("subprocess.Popen", return_value=mock_process):
+            result = driver.run(
+                prompt="test",
+                workdir="/tmp",
+                stream_callback=callback,
+            )
+
+        assert result == ""
+        assert collected_lines == []
+
+    def test_no_timeout_waits_indefinitely(self):
+        """timeout=None 时不设置超时限制。"""
+        driver = FlickDriver(workspace="test-workspace", json_output=False)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Response"
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            driver.run(prompt="test", workdir="/tmp", timeout=None)
+
+        # 验证 subprocess.run 被调用时 timeout=None
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs.get("timeout") is None
+
+    def test_workdir_passed_to_subprocess(self):
+        """workdir 参数正确传递给 subprocess。"""
+        driver = FlickDriver(workspace="test-workspace", json_output=False)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Response"
+
+        test_workdir = "/custom/work/directory"
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            driver.run(prompt="test", workdir=test_workdir)
+
+        # 验证 subprocess.run 被调用时 cwd 参数正确
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs.get("cwd") == test_workdir

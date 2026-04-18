@@ -23,10 +23,12 @@ from reloop.core.prompts import (
     build_executor_prompt,
 )
 from reloop.core.resume import (
+    ResumeChoice,
     RunStatus,
     detect_run_status,
     full_cleanup,
     get_last_run_id,
+    prompt_resume_choice,
     rollback_incomplete_run,
 )
 from reloop.core.workspace import init_workspace
@@ -101,13 +103,12 @@ def run_loop(
     if not fresh:
         status = detect_run_status(project_root)
         if status != RunStatus.FRESH:
-            choice = _handle_resume(project_root, status, interactive)
-            if choice == "reset":
+            last_run_id = get_last_run_id(project_root)
+            choice = prompt_resume_choice(status, last_run_id, interactive)
+            if choice == ResumeChoice.RESET:
                 full_cleanup(project_root)
-            elif status == RunStatus.INTERRUPTED:
-                last_run_id = get_last_run_id(project_root)
-                if last_run_id:
-                    rollback_incomplete_run(project_root, last_run_id)
+            elif status == RunStatus.INTERRUPTED and last_run_id:
+                rollback_incomplete_run(project_root, last_run_id)
 
     if evaluator_driver is None:
         evaluator_driver = executor_driver
@@ -265,53 +266,6 @@ def run_loop(
     raise MaxIterationsExceededError(
         f"Loop did not converge after {max_iterations} iterations"
     )
-
-
-def _handle_resume(
-    project_root: Path,
-    status: RunStatus,
-    interactive: bool,
-) -> str:
-    """处理恢复逻辑。
-
-    Args:
-        project_root: 项目根目录
-        status: 当前状态
-        interactive: 是否交互模式
-
-    Returns:
-        用户选择：continue 或 reset
-    """
-    last_run_id = get_last_run_id(project_root)
-    status_text = {
-        RunStatus.COMPLETED: "已完成（通过）",
-        RunStatus.FAILED: "未通过",
-        RunStatus.INTERRUPTED: "已中断",
-    }.get(status, "未知")
-
-    print(f"""
-检测到已有运行记录：
-  - 最近运行: {last_run_id or '无'}
-  - 状态: {status_text}
-
-请选择：
-  [1] 继续运行（从上次状态继续）
-  [2] 完全重置并从头运行
-""")
-
-    if not interactive:
-        print("使用默认选择: 继续运行")
-        return "continue"
-
-    try:
-        choice = input("请输入选择 [1/2] (默认: 1): ").strip()
-    except EOFError:
-        choice = ""
-
-    if choice == "2":
-        return "reset"
-
-    return "continue"
 
 
 def _log_prompt(log_path: Path, role: str, prompt: str) -> None:

@@ -56,6 +56,92 @@ class TestInitCommand:
             assert "不支持的语言" in result.output
 
 
+class TestInitSubcommands:
+    """测试 init 子命令 (init intent/evaluator/mock)。"""
+
+    def test_init_intent_shows_builder_info(self, tmp_path):
+        """init intent 显示 INTENT Builder 信息。"""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+            project_root = Path(td)
+            (project_root / "task").mkdir()
+            
+            result = runner.invoke(app, ["init", "intent"], input="n\n")
+            
+            assert result.exit_code == 0
+            assert "INTENT Builder" in result.output
+            assert "intent_builder" in result.output or "INTENT" in result.output
+
+    def test_init_intent_warns_existing_file(self, tmp_path):
+        """init intent 检测已存在的 INTENT 文件。"""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+            project_root = Path(td)
+            (project_root / "task").mkdir()
+            (project_root / "task" / "INTENT.md").write_text("# Existing INTENT")
+            
+            result = runner.invoke(app, ["init", "intent"], input="n\n")
+            
+            assert result.exit_code == 0
+            assert "已存在 INTENT 文件" in result.output
+
+    def test_init_evaluator_suggests_intent_first(self, tmp_path):
+        """init evaluator 建议先创建 INTENT。"""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+            project_root = Path(td)
+            (project_root / "task").mkdir()
+            
+            result = runner.invoke(app, ["init", "evaluator"], input="n\n")
+            
+            assert result.exit_code == 0
+            assert "建议先创建 INTENT" in result.output
+            assert "reloop init intent" in result.output
+
+    def test_init_evaluator_shows_builder_info(self, tmp_path):
+        """init evaluator 有 INTENT 时显示 Builder 信息。"""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+            project_root = Path(td)
+            (project_root / "task").mkdir()
+            (project_root / "task" / "INTENT.md").write_text("# Test INTENT")
+            
+            result = runner.invoke(app, ["init", "evaluator"], input="n\n")
+            
+            assert result.exit_code == 0
+            assert "Evaluator Builder" in result.output
+
+    def test_init_mock_requires_evaluator(self, tmp_path):
+        """init mock 需要 Evaluator 存在。"""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+            project_root = Path(td)
+            (project_root / "task").mkdir()
+            
+            result = runner.invoke(app, ["init", "mock"])
+            
+            assert result.exit_code == 1
+            assert "未找到 Evaluator 文件" in result.output
+            assert "reloop init evaluator" in result.output
+
+    def test_init_mock_shows_mocker_info(self, tmp_path):
+        """init mock 有 Evaluator 时显示 Mocker 信息。"""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+            project_root = Path(td)
+            (project_root / "task").mkdir()
+            (project_root / "task" / "EVAL_SKILL.md").write_text("# Test Evaluator")
+            
+            result = runner.invoke(app, ["init", "mock"], input="n\n")
+            
+            assert result.exit_code == 0
+            assert "Mocker" in result.output
+
+    def test_init_unknown_target_fails(self, tmp_path):
+        """init unknown 报错。"""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+            result = runner.invoke(app, ["init", "unknown"])
+            
+            assert result.exit_code == 1
+            assert "未知的初始化目标" in result.output
+            assert "unknown" in result.output
+            assert "intent, evaluator, mock" in result.output
+
+
 class TestCleanCommand:
     """测试 clean 命令。"""
 

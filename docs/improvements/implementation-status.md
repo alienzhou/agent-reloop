@@ -35,7 +35,7 @@
 | 三层评估（L0/L1/L2 短路） | ✅ 已实现 | 设计文档中定义，Evaluator Skill 中使用 |
 | 目录结构 `task/` + `run-sets/` | ✅ 已实现 | CLI `init` 命令创建 |
 | Driver 统一接口 | ✅ 已实现 | `reloop/drivers/base.py` |
-| 三个 Meta Skills | ❌ 未实现 | INTENT builder / Evaluator builder / Mocker |
+| 三个 Meta Skills | ❌ 未实现 | INTENT builder / Evaluator builder / Mocker（见 08-meta-skills-design.md） |
 
 ---
 
@@ -113,7 +113,7 @@
 
 | 项目 | 描述 | 来源 |
 |------|------|------|
-| Meta Skills 系统 | INTENT builder / Evaluator builder / Mocker | D01 架构讨论 |
+| Meta Skills 系统 | INTENT builder / Evaluator builder / Mocker | D01 架构讨论，详见 `08-meta-skills-design.md` |
 
 ---
 

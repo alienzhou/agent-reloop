@@ -225,12 +225,13 @@ def rollback_incomplete_run(project_root: Path, run_id: str) -> None:
     logger.info(f"Rolled back incomplete run: {run_id}")
 
 
-def full_cleanup(project_root: Path, keep_logs: bool = False) -> None:
+def full_cleanup(project_root: Path, keep_logs: bool = False, keep_solution: bool = False) -> None:
     """完全清理，回到初始状态。
 
     Args:
         project_root: 项目根目录
         keep_logs: 是否保留日志
+        keep_solution: 是否保留 solution 目录内容
     """
     # 获取初始 commit
     result = subprocess.run(
@@ -261,14 +262,15 @@ def full_cleanup(project_root: Path, keep_logs: bool = False) -> None:
         (run_sets_dir / ".gitkeep").write_text("")
 
     # 清理 solution（可选，暂时保留目录结构）
-    solution_dir = project_root / "task" / "solution"
-    if solution_dir.exists():
-        for item in solution_dir.iterdir():
-            if item.is_file():
-                item.unlink()
-            elif item.is_dir():
-                shutil.rmtree(item)
-        logger.info("Cleared task/solution/")
+    if not keep_solution:
+        solution_dir = project_root / "task" / "solution"
+        if solution_dir.exists():
+            for item in solution_dir.iterdir():
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+            logger.info("Cleared task/solution/")
 
     # 清理日志
     if not keep_logs:

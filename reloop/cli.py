@@ -184,20 +184,7 @@ def clean(
 
     # 执行清理
     try:
-        full_cleanup(project_root, keep_logs=keep_logs)
-
-        # 清理 solution（可选）
-        if not keep_solution:
-            solution_dir = project_root / "task" / "solution"
-            if solution_dir.exists():
-                for item in solution_dir.iterdir():
-                    if item.name == ".gitkeep":
-                        continue
-                    if item.is_file():
-                        item.unlink()
-                    elif item.is_dir():
-                        shutil.rmtree(item)
-                print("  ✓ 已清空 task/solution/")
+        full_cleanup(project_root, keep_logs=keep_logs, keep_solution=keep_solution)
 
         print("✓ 清理完成")
 

@@ -83,7 +83,7 @@ class MockDriver(Driver):
             lines = response.split("\n")
             for line in lines:
                 time.sleep(self.delay_per_line)
-                stream_callback(line)
+                stream_callback(line + "\n")  # 添加换行符，StreamOutput 期望完整行
 
         return response
 

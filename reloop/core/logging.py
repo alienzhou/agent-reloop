@@ -49,6 +49,7 @@ class StreamOutput:
         self.timestamp_format = timestamp_format
         self.buffer: list[str] = []
         self.line_buffer = ""
+        self._displayed_lines = 0  # 跟踪已显示的行数
 
         # 确保日志目录存在
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -85,8 +86,8 @@ class StreamOutput:
 
     def _refresh_display(self) -> None:
         """刷新终端显示（滚动窗口）。"""
-        # 清除当前显示
-        for _ in range(self.max_lines):
+        # 只清除之前显示的行数
+        for _ in range(self._displayed_lines):
             # 上移一行并清除
             sys.stdout.write("\033[F\033[K")
 
@@ -97,6 +98,9 @@ class StreamOutput:
         # 如果缓冲不足 max_lines，补充空行
         for _ in range(self.max_lines - len(self.buffer)):
             sys.stdout.write("\n")
+
+        # 更新已显示的行数
+        self._displayed_lines = max(len(self.buffer), self.max_lines)
 
         sys.stdout.flush()
 

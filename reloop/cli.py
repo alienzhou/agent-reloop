@@ -16,16 +16,11 @@ app = typer.Typer(
 )
 
 
-@app.command()
-def init(
-    language: str = typer.Option(
-        None, "--lang", "-l", help="项目语言模板 (python/java/go/node)"
-    ),
-    no_git: bool = typer.Option(
-        False, "--no-git", help="跳过 Git 初始化"
-    ),
+def _init_project(
+    language: str | None = None,
+    no_git: bool = False,
 ) -> None:
-    """初始化项目 Git 和配置。"""
+    """初始化项目 Git 和配置（内部函数）。"""
     from reloop.core.git_utils import ensure_git_repo, init_git_repo, is_git_repo
     from reloop.core.gitignore import generate_gitignore, get_available_languages
 
@@ -58,6 +53,8 @@ def init(
     (project_root / "task").mkdir(exist_ok=True)
     (project_root / "task" / "solution").mkdir(exist_ok=True)
     (project_root / "task" / "solution" / ".gitkeep").write_text("")
+    (project_root / "task" / "scripts").mkdir(exist_ok=True)
+    (project_root / "task" / "scripts" / ".gitkeep").write_text("")
     (project_root / "run-sets").mkdir(exist_ok=True)
     (project_root / "run-sets" / ".gitkeep").write_text("")
     (project_root / "logs").mkdir(exist_ok=True)
@@ -65,6 +62,249 @@ def init(
     print("✓ 目录结构已创建")
 
     print("\n项目初始化完成！")
+
+
+def _get_meta_skill_path(skill_name: str) -> Path:
+    """获取 Meta Skill 文件路径。"""
+    # 从 reloop 包目录查找
+    reloop_pkg = Path(__file__).parent
+    skill_path = reloop_pkg / "meta_skills" / f"{skill_name}.md"
+    return skill_path
+
+
+def _init_intent() -> None:
+    """启动 INTENT Builder，交互式生成 INTENT.md。"""
+    project_root = Path.cwd()
+    intent_file = project_root / "task" / "INTENT.md"
+    skill_path = _get_meta_skill_path("intent_builder")
+
+    print("🎯 INTENT Builder")
+    print("=" * 40)
+
+    if intent_file.exists():
+        print(f"⚠️  已存在 INTENT 文件: {intent_file}")
+        try:
+            overwrite = typer.confirm("是否覆盖？", default=False)
+            if not overwrite:
+                print("已取消")
+                return
+        except KeyboardInterrupt:
+            print("\n已取消")
+            return
+
+    # 检查 Meta Skill 文件是否存在
+    if not skill_path.exists():
+        print(f"⚠️  INTENT Builder Skill 文件未找到: {skill_path}")
+        print("   请确保 reloop/meta_skills/intent_builder.md 存在")
+        print("\n提示: 你可以手动创建 task/INTENT.md，格式如下:")
+        print(_get_intent_template())
+        raise typer.Exit(1)
+
+    # 显示引导信息
+    skill_content = skill_path.read_text(encoding="utf-8")
+    print("\n请在 AI 对话中使用以下 Skill 引导生成 INTENT:")
+    print(f"  📄 Skill 文件: {skill_path}")
+    print(f"  📁 输出位置: {intent_file}")
+    print("\n或者手动创建 task/INTENT.md，格式如下:")
+    print(_get_intent_template())
+
+
+def _get_intent_template() -> str:
+    """获取 INTENT 模板。"""
+    return """
+```markdown
+# Task Intent
+
+## 目标
+[一句话描述最终目标]
+
+## 背景
+[任务的上下文和动机]
+
+## 输入
+[输入内容的描述]
+
+## 输出
+[期望输出的描述]
+
+## 约束
+[任何限制或边界条件]
+```
+"""
+
+
+def _init_evaluator() -> None:
+    """启动 Evaluator Builder，交互式生成 EVAL_SKILL.md。"""
+    project_root = Path.cwd()
+    eval_file = project_root / "task" / "EVAL_SKILL.md"
+    intent_file = project_root / "task" / "INTENT.md"
+    skill_path = _get_meta_skill_path("evaluator_builder")
+
+    print("📋 Evaluator Builder")
+    print("=" * 40)
+
+    # 检查 INTENT 是否存在
+    if not intent_file.exists():
+        print("⚠️  建议先创建 INTENT.md")
+        print("   运行: reloop init intent")
+        try:
+            proceed = typer.confirm("是否继续？", default=True)
+            if not proceed:
+                return
+        except KeyboardInterrupt:
+            print("\n已取消")
+            return
+
+    if eval_file.exists():
+        print(f"⚠️  已存在 Evaluator 文件: {eval_file}")
+        try:
+            overwrite = typer.confirm("是否覆盖？", default=False)
+            if not overwrite:
+                print("已取消")
+                return
+        except KeyboardInterrupt:
+            print("\n已取消")
+            return
+
+    # 检查 Meta Skill 文件是否存在
+    if not skill_path.exists():
+        print(f"⚠️  Evaluator Builder Skill 文件未找到: {skill_path}")
+        print("   请确保 reloop/meta_skills/evaluator_builder.md 存在")
+        print("\n提示: 你可以手动创建 task/EVAL_SKILL.md，格式如下:")
+        print(_get_evaluator_template())
+        raise typer.Exit(1)
+
+    # 显示引导信息
+    print("\n请在 AI 对话中使用以下 Skill 引导生成 Evaluator:")
+    print(f"  📄 Skill 文件: {skill_path}")
+    print(f"  📁 输出位置: {eval_file}")
+    if intent_file.exists():
+        print(f"  📖 INTENT 文件: {intent_file}")
+    print("\n或者手动创建 task/EVAL_SKILL.md，格式如下:")
+    print(_get_evaluator_template())
+
+
+def _get_evaluator_template() -> str:
+    """获取 Evaluator 模板。"""
+    return """
+```markdown
+# Evaluator Skill
+
+## L0 - 安全检查
+[前置条件和安全边界检查]
+
+脚本: `task/scripts/check_l0.py`
+
+## L1 - 机械性验证
+[格式、结构、存在性等确定性检查]
+
+脚本: `task/scripts/check_l1.py`
+
+## L2 - 质量验证
+[语义、质量等需要 LLM 判断的检查]
+
+## 评估流程
+1. 运行 L0 检查脚本
+2. 如果 L0 通过，运行 L1 检查脚本
+3. 如果 L1 通过，使用 LLM 进行 L2 评估
+4. 汇总结果
+```
+"""
+
+
+def _init_mock() -> None:
+    """运行 Mocker，生成 Mock artifacts 并验证 Evaluator。"""
+    project_root = Path.cwd()
+    eval_file = project_root / "task" / "EVAL_SKILL.md"
+    mock_dir = project_root / "run-sets" / "run-mock" / "artifacts"
+    skill_path = _get_meta_skill_path("mocker")
+
+    print("🎭 Mocker")
+    print("=" * 40)
+
+    # 检查 Evaluator 是否存在
+    if not eval_file.exists():
+        print("❌ 未找到 Evaluator 文件: task/EVAL_SKILL.md")
+        print("   请先运行: reloop init evaluator")
+        raise typer.Exit(1)
+
+    # 检查 Mock 目录是否存在
+    if mock_dir.exists() and any(mock_dir.iterdir()):
+        print(f"⚠️  Mock artifacts 目录已存在: {mock_dir}")
+        try:
+            overwrite = typer.confirm("是否清空并重新生成？", default=False)
+            if not overwrite:
+                print("已取消")
+                return
+            # 清空目录
+            shutil.rmtree(mock_dir)
+        except KeyboardInterrupt:
+            print("\n已取消")
+            return
+
+    # 创建 Mock 目录
+    mock_dir.mkdir(parents=True, exist_ok=True)
+
+    # 检查 Meta Skill 文件是否存在
+    if not skill_path.exists():
+        print(f"⚠️  Mocker Skill 文件未找到: {skill_path}")
+        print("   请确保 reloop/meta_skills/mocker.md 存在")
+        raise typer.Exit(1)
+
+    # 显示引导信息
+    print("\n请在 AI 对话中使用以下 Skill 生成 Mock artifacts:")
+    print(f"  📄 Skill 文件: {skill_path}")
+    print(f"  📖 Evaluator 文件: {eval_file}")
+    print(f"  📁 输出目录: {mock_dir}")
+    print("\nMocker 将:")
+    print("  1. 读取 EVAL_SKILL.md 中的 L0/L1/L2 标准")
+    print("  2. 推断能通过所有检查的输出样本")
+    print("  3. 生成 Mock artifacts 到 run-sets/run-mock/artifacts/")
+    print("  4. 运行 Evaluator 验证 Mock 是否通过")
+
+
+@app.command()
+def init(
+    target: str = typer.Argument(
+        None,
+        help="初始化目标: intent/evaluator/mock (留空则初始化项目)"
+    ),
+    language: str = typer.Option(
+        None, "--lang", "-l", help="项目语言模板 (python/java/go/node)"
+    ),
+    no_git: bool = typer.Option(
+        False, "--no-git", help="跳过 Git 初始化"
+    ),
+) -> None:
+    """初始化项目或 Meta Skills。
+
+    \b
+    用法:
+      reloop init              # 初始化项目（Git、目录结构）
+      reloop init intent       # 启动 INTENT Builder
+      reloop init evaluator    # 启动 Evaluator Builder
+      reloop init mock         # 运行 Mocker
+
+    \b
+    Meta Skills 说明:
+      intent     - 交互式定义任务目标，生成 task/INTENT.md
+      evaluator  - 交互式定义评估标准，生成 task/EVAL_SKILL.md
+      mock       - 生成 Mock artifacts，验证 Evaluator 逻辑
+    """
+    if target is None:
+        # 原有的项目初始化逻辑
+        _init_project(language, no_git)
+    elif target == "intent":
+        _init_intent()
+    elif target == "evaluator":
+        _init_evaluator()
+    elif target == "mock":
+        _init_mock()
+    else:
+        print(f"❌ 未知的初始化目标: {target}")
+        print("   可用目标: intent, evaluator, mock")
+        print("   或留空以初始化项目")
+        raise typer.Exit(1)
 
 
 @app.command()

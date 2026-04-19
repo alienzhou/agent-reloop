@@ -255,13 +255,29 @@ def _run_loop_with_live_ui(
         skip_executor = True
         logger.info(f"Resuming from evaluator, reusing solution from {resume_run_id}")
 
+    # 确定起始轮数（resume 场景从已有 run 数推断）
+    start_round_num = 1
+    if resume_run_id:
+        # 从 "run-003" 提取数字 3
+        try:
+            start_round_num = int(resume_run_id.replace("run-", ""))
+        except ValueError:
+            logger.warning(f"Could not parse round number from {resume_run_id}, starting from 1")
+            start_round_num = 1
+    
+    # 边界检查：如果起始轮数已经超过最大迭代次数，直接报错
+    if start_round_num > max_iterations:
+        raise MaxIterationsExceededError(
+            f"Resume round {start_round_num} exceeds max_iterations {max_iterations}"
+        )
+
     with ui.live_context():
-        for round_num in range(1, max_iterations + 1):
+        for round_num in range(start_round_num, max_iterations + 1):
             logger.info("=== Round %d ===", round_num)
 
             # ① 初始化工作空间
             # 如果是恢复模式的第一轮，复用已有的 run_dir
-            if (skip_executor or skip_evaluator) and resume_run_id and round_num == 1:
+            if (skip_executor or skip_evaluator) and resume_run_id and round_num == start_round_num:
                 run_dir = project_root / "run-sets" / resume_run_id
                 run_id = resume_run_id
                 logger.info("Reusing workspace: %s", run_dir)
@@ -279,7 +295,7 @@ def _run_loop_with_live_ui(
             ui.start_round(round_num, max_iterations, run_id)
 
             # ② Executor（可跳过）
-            if skip_executor and round_num == 1:
+            if skip_executor and round_num == start_round_num:
                 ui.set_stage("Executor", StageStatus.SKIPPED)
                 ui.complete_stage("Executor", skipped=True)
                 logger.info("Skipping executor (resume mode)")
@@ -328,7 +344,7 @@ def _run_loop_with_live_ui(
                     auto_commit_after_execution(project_root, run_id)
 
             # ③ Evaluator（可跳过）
-            if skip_evaluator and round_num == 1:
+            if skip_evaluator and round_num == start_round_num:
                 ui.set_stage("Evaluator", StageStatus.SKIPPED)
                 ui.complete_stage("Evaluator", skipped=True)
                 logger.info("Skipping evaluator (resume mode)")
@@ -546,11 +562,27 @@ def _run_loop_classic(
     if accumulated_time > 0:
         print(f"[{time.strftime('%H:%M:%S')}] ⏱️  累计时间: {format_elapsed_verbose(accumulated_time)}")
 
-    for round_num in range(1, max_iterations + 1):
+    # 确定起始轮数（resume 场景从已有 run 数推断）
+    start_round_num = 1
+    if resume_run_id:
+        # 从 "run-003" 提取数字 3
+        try:
+            start_round_num = int(resume_run_id.replace("run-", ""))
+        except ValueError:
+            logger.warning(f"Could not parse round number from {resume_run_id}, starting from 1")
+            start_round_num = 1
+    
+    # 边界检查：如果起始轮数已经超过最大迭代次数，直接报错
+    if start_round_num > max_iterations:
+        raise MaxIterationsExceededError(
+            f"Resume round {start_round_num} exceeds max_iterations {max_iterations}"
+        )
+
+    for round_num in range(start_round_num, max_iterations + 1):
         logger.info("=== Round %d ===", round_num)
 
         # ① 初始化工作空间
-        if (skip_executor or skip_evaluator) and resume_run_id and round_num == 1:
+        if (skip_executor or skip_evaluator) and resume_run_id and round_num == start_round_num:
             run_dir = project_root / "run-sets" / resume_run_id
             run_id = resume_run_id
             logger.info("Reusing workspace: %s", run_dir)
@@ -565,7 +597,7 @@ def _run_loop_classic(
         log_paths = get_run_log_paths(project_root, run_id)
 
         # ② Executor（可跳过）
-        if skip_executor and round_num == 1:
+        if skip_executor and round_num == start_round_num:
             print(f"[{time.strftime('%H:%M:%S')}] ⏭️ Executor skipped (resume mode)")
         else:
             exec_spec = _EXEC_SPEC_TEMPLATE.format(
@@ -613,7 +645,7 @@ def _run_loop_classic(
                 auto_commit_after_execution(project_root, run_id)
 
         # ③ Evaluator（可跳过）
-        if skip_evaluator and round_num == 1:
+        if skip_evaluator and round_num == start_round_num:
             print(f"[{time.strftime('%H:%M:%S')}] ⏭️ Evaluator skipped (resume mode)")
         else:
             solution_dir = str(project_root / "task" / "solution")

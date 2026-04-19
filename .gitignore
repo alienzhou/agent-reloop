@@ -24,3 +24,5 @@ examples/_demo_workspace/
 
 # Egg-info
 *.egg-info/
+
+task/

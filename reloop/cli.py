@@ -582,13 +582,13 @@ def status() -> None:
 
 def main() -> None:
     """CLI 入口点。"""
-    from reloop.core.logging import setup_system_logging
+    from reloop.core.logging import setup_rotating_logger
 
-    # 初始化日志系统
+    # 初始化日志系统（带轮转压缩，DEBUG 级别）
     project_root = Path.cwd()
     log_path = project_root / "logs" / "reloop.log"
     if log_path.parent.exists():
-        setup_system_logging(log_path)
+        setup_rotating_logger("reloop", log_path, level=logging.DEBUG)
 
     app()
 

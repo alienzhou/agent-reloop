@@ -15,7 +15,7 @@ from reloop.core.logging import (
     StreamOutput,
     get_run_log_paths,
     log_driver_call,
-    setup_system_logging,
+    setup_rotating_logger,
 )
 from reloop.core.prompts import (
     build_checker_prompt,
@@ -122,8 +122,8 @@ def run_loop(
     Returns:
         LoopResult 包含成功/失败、轮数、run_id 列表
     """
-    # 初始化系统日志
-    setup_system_logging(project_root / "logs" / "reloop.log")
+    # 初始化系统日志（带轮转压缩，DEBUG 级别）
+    setup_rotating_logger("reloop", project_root / "logs" / "reloop.log", level=logging.DEBUG)
 
     # 确定恢复策略
     resume_choice = ResumeChoice.CONTINUE

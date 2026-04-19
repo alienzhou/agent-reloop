@@ -18,6 +18,14 @@ from reloop.core.prompts import (
     build_evaluator_prompt,
     build_executor_prompt,
 )
+from reloop.core.resume import (
+    ResumeChoice,
+    RunPhase,
+    RunStatus,
+    detect_run_phase,
+    detect_run_status,
+    get_resumable_run,
+)
 from reloop.core.ui import ReloopLiveUI, StageStatus, StreamPanel
 from reloop.core.workspace import init_workspace, next_run_id
 
@@ -38,6 +46,13 @@ __all__ = [
     "build_checker_prompt",
     "build_evaluator_prompt",
     "build_executor_prompt",
+    # Resume
+    "ResumeChoice",
+    "RunPhase",
+    "RunStatus",
+    "detect_run_phase",
+    "detect_run_status",
+    "get_resumable_run",
     # UI
     "ReloopLiveUI",
     "StageStatus",

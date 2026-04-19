@@ -333,8 +333,18 @@ def run(
     config: Path = typer.Option(
         None, "--config", "-c", help="配置文件路径 (默认: ./reloop.yaml)"
     ),
+    from_phase: str = typer.Option(
+        None, "--from-phase", "-p",
+        help="从指定阶段开始 (evaluator/checker)，跳过已完成的阶段"
+    ),
 ) -> None:
-    """运行 Reloop 迭代循环。"""
+    """运行 Reloop 迭代循环。
+    
+    \b
+    恢复选项:
+      --from-phase evaluator  从 Evaluator 开始，复用已有的 solution
+      --from-phase checker    从 Checker 开始，复用已有的 eval-report
+    """
     from reloop.config import load_config
     from reloop.core.loop import run_loop
     from reloop.drivers import create_driver
@@ -377,6 +387,12 @@ def run(
         print(f"❌ 创建 Driver 失败: {e}")
         raise typer.Exit(1)
 
+    # 验证 from_phase 参数
+    if from_phase and from_phase not in ["evaluator", "checker"]:
+        print(f"❌ 无效的 --from-phase 值: {from_phase}")
+        print("   可用值: evaluator, checker")
+        raise typer.Exit(1)
+
     try:
         result = run_loop(
             project_root=project_root,
@@ -388,6 +404,7 @@ def run(
             fresh=fresh,
             interactive=not non_interactive,
             use_live_ui=not no_live_ui,
+            start_phase=from_phase,
         )
 
         # Live UI 模式下摘要已在 loop 中打印，这里不重复

@@ -21,11 +21,22 @@ class RunStatus(str, Enum):
     INTERRUPTED = "interrupted"  # 中断
 
 
+class RunPhase(str, Enum):
+    """Run 阶段枚举 — 用于细粒度恢复。"""
+
+    INIT = "init"  # 刚创建 workspace
+    EXECUTOR_DONE = "executor_done"  # Executor 完成
+    EVALUATOR_DONE = "evaluator_done"  # Evaluator 完成（有 eval-report）
+    CHECKER_DONE = "checker_done"  # Checker 完成（有 checker-result）
+
+
 class ResumeChoice(str, Enum):
     """恢复选择枚举。"""
 
     CONTINUE = "continue"  # 继续运行
     RESET = "reset"  # 完全重置
+    FROM_EVALUATOR = "from_evaluator"  # 从 Evaluator 开始
+    FROM_CHECKER = "from_checker"  # 从 Checker 开始
 
 
 def detect_run_status(project_root: Path) -> RunStatus:
@@ -122,6 +133,88 @@ def detect_single_run_status(project_root: Path, run_dir: Path) -> RunStatus:
     # 无法判断，保守标记为中断
     logger.warning(f"Cannot determine status from report for {run_id}")
     return RunStatus.INTERRUPTED
+
+
+def detect_run_phase(project_root: Path, run_dir: Path) -> RunPhase:
+    """检测单个 run 的阶段（细粒度）。
+
+    根据产物存在性判断当前阶段：
+    - checker-result/result.md 存在 → CHECKER_DONE
+    - eval-report/report.md 存在 → EVALUATOR_DONE
+    - task/solution/ 有内容且有对应 git commit → EXECUTOR_DONE
+    - 其他 → INIT
+
+    Args:
+        project_root: 项目根目录
+        run_dir: run 目录路径
+
+    Returns:
+        阶段枚举值
+    """
+    run_id = run_dir.name
+
+    # 检查 Checker 结果
+    checker_result_path = run_dir / "checker-result" / "result.md"
+    if checker_result_path.exists():
+        logger.info(f"Found checker result for {run_id}")
+        return RunPhase.CHECKER_DONE
+
+    # 检查 Evaluator 报告
+    report_path = run_dir / "eval-report" / "report.md"
+    if report_path.exists():
+        logger.info(f"Found eval report for {run_id}, can resume from checker")
+        return RunPhase.EVALUATOR_DONE
+
+    # 检查 Executor 产出（solution 目录有内容）
+    solution_dir = project_root / "task" / "solution"
+    if solution_dir.exists():
+        solution_files = list(solution_dir.rglob("*"))
+        # 过滤掉 .gitkeep 等占位文件
+        solution_files = [
+            f for f in solution_files
+            if f.is_file() and f.name not in [".gitkeep", ".gitignore"]
+        ]
+        if solution_files:
+            logger.info(f"Found solution files for {run_id}, can resume from evaluator")
+            return RunPhase.EXECUTOR_DONE
+
+    # 默认是 INIT
+    logger.info(f"Run {run_id} is at INIT phase")
+    return RunPhase.INIT
+
+
+def get_resumable_run(project_root: Path) -> Optional[tuple[str, RunPhase]]:
+    """获取可恢复的 run 及其阶段。
+
+    Args:
+        project_root: 项目根目录
+
+    Returns:
+        (run_id, phase) 或 None
+    """
+    run_sets_dir = project_root / "run-sets"
+    if not run_sets_dir.exists():
+        return None
+
+    runs = sorted(
+        [d for d in run_sets_dir.iterdir() if d.is_dir() and d.name.startswith("run-")],
+        key=lambda x: x.name,
+    )
+
+    if not runs:
+        return None
+
+    last_run = runs[-1]
+    phase = detect_run_phase(project_root, last_run)
+
+    # 如果 Checker 已完成，检查是 PASS 还是 FAIL
+    if phase == RunPhase.CHECKER_DONE:
+        status = detect_single_run_status(project_root, last_run)
+        if status == RunStatus.COMPLETED:
+            # 已完成，没有可恢复的
+            return None
+
+    return (last_run.name, phase)
 
 
 def get_last_run_id(project_root: Path) -> Optional[str]:
@@ -312,6 +405,7 @@ def full_cleanup(project_root: Path, keep_logs: bool = False, keep_solution: boo
 def prompt_resume_choice(
     status: RunStatus,
     last_run_id: Optional[str] = None,
+    phase: Optional[RunPhase] = None,
     interactive: bool = True,
 ) -> ResumeChoice:
     """提示用户选择恢复策略。
@@ -319,13 +413,18 @@ def prompt_resume_choice(
     Args:
         status: 当前项目状态
         last_run_id: 最近的 run ID
+        phase: 当前阶段（细粒度）
         interactive: 是否交互模式
 
     Returns:
         用户选择的恢复策略
     """
-    # 非交互模式：使用默认选择
+    # 非交互模式：智能选择
     if not interactive:
+        if phase == RunPhase.EVALUATOR_DONE:
+            return ResumeChoice.FROM_CHECKER
+        elif phase == RunPhase.EXECUTOR_DONE:
+            return ResumeChoice.FROM_EVALUATOR
         return ResumeChoice.CONTINUE
 
     # 构建状态描述
@@ -335,11 +434,20 @@ def prompt_resume_choice(
         RunStatus.INTERRUPTED: "已中断（未完成评估）",
     }.get(status, "未知")
 
+    phase_desc = {
+        RunPhase.INIT: "初始化",
+        RunPhase.EXECUTOR_DONE: "Executor 已完成",
+        RunPhase.EVALUATOR_DONE: "Evaluator 已完成",
+        RunPhase.CHECKER_DONE: "Checker 已完成",
+    }.get(phase, "未知") if phase else None
+
     # 显示提示
     print("\n检测到已有运行记录：")
     if last_run_id:
         print(f"  - 最近运行: {last_run_id}")
     print(f"  - 状态: {status_desc}")
+    if phase_desc:
+        print(f"  - 阶段: {phase_desc}")
     print()
 
     # 特殊提示：已完成时
@@ -347,21 +455,43 @@ def prompt_resume_choice(
         print("⚠️  任务已成功完成")
         print()
 
+    # 根据阶段提供选项
     print("请选择：")
-    print("  [1] 继续运行（从上次状态继续）")
-    print("  [2] 完全重置并从头运行")
+    
+    options = []
+    if phase == RunPhase.EVALUATOR_DONE:
+        options.append(("1", "直接运行 Checker（复用已有的 eval-report）", ResumeChoice.FROM_CHECKER))
+        options.append(("2", "从 Evaluator 重新开始", ResumeChoice.FROM_EVALUATOR))
+        options.append(("3", "从 Executor 重新开始", ResumeChoice.CONTINUE))
+        options.append(("4", "完全重置并从头运行", ResumeChoice.RESET))
+        default = "1"
+    elif phase == RunPhase.EXECUTOR_DONE:
+        options.append(("1", "从 Evaluator 开始（复用已有的 solution）", ResumeChoice.FROM_EVALUATOR))
+        options.append(("2", "从 Executor 重新开始", ResumeChoice.CONTINUE))
+        options.append(("3", "完全重置并从头运行", ResumeChoice.RESET))
+        default = "1"
+    else:
+        options.append(("1", "继续运行（从上次状态继续）", ResumeChoice.CONTINUE))
+        options.append(("2", "完全重置并从头运行", ResumeChoice.RESET))
+        default = "1"
+
+    for key, desc, _ in options:
+        print(f"  [{key}] {desc}")
     print()
 
     # 获取用户输入
+    valid_keys = [opt[0] for opt in options]
     while True:
         try:
-            choice = input("请输入选择 [1/2] (默认: 1): ").strip()
-            if choice == "" or choice == "1":
-                return ResumeChoice.CONTINUE
-            elif choice == "2":
-                return ResumeChoice.RESET
-            else:
-                print("无效输入，请输入 1 或 2")
+            choice = input(f"请输入选择 [{'/'.join(valid_keys)}] (默认: {default}): ").strip()
+            if choice == "":
+                choice = default
+            
+            for key, _, resume_choice in options:
+                if choice == key:
+                    return resume_choice
+            
+            print(f"无效输入，请输入 {'/'.join(valid_keys)}")
         except KeyboardInterrupt:
             print("\n已取消")
             raise SystemExit(0)

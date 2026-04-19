@@ -30,6 +30,7 @@ class StageStatus(Enum):
     RUNNING = "running"
     DONE = "done"
     FAILED = "failed"
+    SKIPPED = "skipped"
 
 
 @dataclass
@@ -47,6 +48,7 @@ class Stage:
             StageStatus.RUNNING: ("🔄", "yellow"),
             StageStatus.DONE: ("✅", "green"),
             StageStatus.FAILED: ("❌", "red"),
+            StageStatus.SKIPPED: ("⏭️", "cyan"),
         }
         icon, style = status_icons[self.status]
         return Text(f"{icon} {self.name}", style=style)
@@ -220,9 +222,12 @@ class ReloopLiveUI:
         self.stream_panel.set_stage(stage_name)
         self.refresh()
     
-    def complete_stage(self, stage_name: str, success: bool = True) -> None:
+    def complete_stage(self, stage_name: str, success: bool = True, skipped: bool = False) -> None:
         """完成阶段。"""
-        status = StageStatus.DONE if success else StageStatus.FAILED
+        if skipped:
+            status = StageStatus.SKIPPED
+        else:
+            status = StageStatus.DONE if success else StageStatus.FAILED
         self.set_stage(stage_name, status)
     
     def end_round(self, passed: bool) -> None:

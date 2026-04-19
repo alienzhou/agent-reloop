@@ -7,11 +7,14 @@ import pytest
 
 from reloop.core.resume import (
     ResumeChoice,
+    RunPhase,
     RunStatus,
+    detect_run_phase,
     detect_run_status,
     detect_single_run_status,
     full_cleanup,
     get_last_run_id,
+    get_resumable_run,
     get_run_before,
     prompt_resume_choice,
     rollback_incomplete_run,
@@ -477,3 +480,235 @@ def _commit_for_run(path: Path, run_id: str) -> None:
             ["git", "commit", "-m", f"reloop: executor completed {run_id}"],
             cwd=path, capture_output=True, check=True
         )
+
+
+# === RunPhase 细粒度检测测试 ===
+
+class TestDetectRunPhase:
+    """测试 RunPhase 细粒度阶段检测。"""
+
+    def test_init_phase_empty_run(self, tmp_path):
+        """空 run 目录应返回 INIT。"""
+        _init_git_repo(tmp_path)
+        
+        run_dir = tmp_path / "run-sets" / "run-001"
+        run_dir.mkdir(parents=True)
+        
+        phase = detect_run_phase(tmp_path, run_dir)
+        assert phase == RunPhase.INIT
+
+    def test_executor_done_with_solution(self, tmp_path):
+        """有 solution 文件时返回 EXECUTOR_DONE。"""
+        _init_git_repo(tmp_path)
+        
+        # 创建 solution 文件
+        solution_dir = tmp_path / "task" / "solution"
+        solution_dir.mkdir(parents=True)
+        (solution_dir / "main.py").write_text("# solution code")
+        
+        run_dir = tmp_path / "run-sets" / "run-001"
+        run_dir.mkdir(parents=True)
+        
+        phase = detect_run_phase(tmp_path, run_dir)
+        assert phase == RunPhase.EXECUTOR_DONE
+
+    def test_executor_done_ignores_gitkeep(self, tmp_path):
+        """只有 .gitkeep 时不算有 solution。"""
+        _init_git_repo(tmp_path)
+        
+        solution_dir = tmp_path / "task" / "solution"
+        solution_dir.mkdir(parents=True)
+        (solution_dir / ".gitkeep").write_text("")
+        
+        run_dir = tmp_path / "run-sets" / "run-001"
+        run_dir.mkdir(parents=True)
+        
+        phase = detect_run_phase(tmp_path, run_dir)
+        assert phase == RunPhase.INIT
+
+    def test_evaluator_done_with_report(self, tmp_path):
+        """有 eval-report 时返回 EVALUATOR_DONE。"""
+        _init_git_repo(tmp_path)
+        
+        run_dir = tmp_path / "run-sets" / "run-001"
+        run_dir.mkdir(parents=True)
+        
+        # 创建 eval report
+        report_dir = run_dir / "eval-report"
+        report_dir.mkdir()
+        (report_dir / "report.md").write_text("## Evaluation Report")
+        
+        phase = detect_run_phase(tmp_path, run_dir)
+        assert phase == RunPhase.EVALUATOR_DONE
+
+    def test_checker_done_with_result(self, tmp_path):
+        """有 checker-result 时返回 CHECKER_DONE。"""
+        _init_git_repo(tmp_path)
+        
+        run_dir = tmp_path / "run-sets" / "run-001"
+        run_dir.mkdir(parents=True)
+        
+        # 创建 eval report 和 checker result
+        (run_dir / "eval-report").mkdir()
+        (run_dir / "eval-report" / "report.md").write_text("## Report")
+        
+        (run_dir / "checker-result").mkdir()
+        (run_dir / "checker-result" / "result.md").write_text("PASSED")
+        
+        phase = detect_run_phase(tmp_path, run_dir)
+        assert phase == RunPhase.CHECKER_DONE
+
+    def test_phase_priority_checker_over_evaluator(self, tmp_path):
+        """Checker 完成优先于 Evaluator 完成。"""
+        _init_git_repo(tmp_path)
+        
+        run_dir = tmp_path / "run-sets" / "run-001"
+        _create_complete_run_with_checker(run_dir, passed=True)
+        
+        phase = detect_run_phase(tmp_path, run_dir)
+        assert phase == RunPhase.CHECKER_DONE
+
+
+class TestGetResumableRun:
+    """测试获取可恢复的 run。"""
+
+    def test_no_runs_returns_none(self, tmp_path):
+        """没有 runs 时返回 None。"""
+        result = get_resumable_run(tmp_path)
+        assert result is None
+
+    def test_completed_run_returns_none(self, tmp_path):
+        """已完成的 run 返回 None（不需要恢复）。"""
+        _init_git_repo(tmp_path)
+        
+        run_dir = tmp_path / "run-sets" / "run-001"
+        _create_complete_run_with_checker(run_dir, passed=True)
+        _commit_for_run(tmp_path, "run-001")
+        
+        result = get_resumable_run(tmp_path)
+        assert result is None
+
+    def test_evaluator_done_is_resumable(self, tmp_path):
+        """Evaluator 完成的 run 可以恢复。"""
+        _init_git_repo(tmp_path)
+        
+        run_dir = tmp_path / "run-sets" / "run-001"
+        run_dir.mkdir(parents=True)
+        
+        # 只有 eval report，没有 checker result
+        (run_dir / "eval-report").mkdir()
+        (run_dir / "eval-report" / "report.md").write_text("## Report")
+        
+        result = get_resumable_run(tmp_path)
+        assert result is not None
+        run_id, phase = result
+        assert run_id == "run-001"
+        assert phase == RunPhase.EVALUATOR_DONE
+
+    def test_failed_run_is_resumable(self, tmp_path):
+        """失败的 run 可以恢复。"""
+        _init_git_repo(tmp_path)
+        
+        run_dir = tmp_path / "run-sets" / "run-001"
+        _create_complete_run_with_checker(run_dir, passed=False)
+        _commit_for_run(tmp_path, "run-001")
+        
+        result = get_resumable_run(tmp_path)
+        assert result is not None
+        run_id, phase = result
+        assert run_id == "run-001"
+        assert phase == RunPhase.CHECKER_DONE
+
+
+class TestPromptResumeChoiceWithPhase:
+    """测试带 phase 的用户交互选择。"""
+
+    def test_non_interactive_evaluator_done_returns_from_checker(self):
+        """非交互模式下 EVALUATOR_DONE 返回 FROM_CHECKER。"""
+        result = prompt_resume_choice(
+            RunStatus.INTERRUPTED,
+            last_run_id="run-001",
+            phase=RunPhase.EVALUATOR_DONE,
+            interactive=False,
+        )
+        assert result == ResumeChoice.FROM_CHECKER
+
+    def test_non_interactive_executor_done_returns_from_evaluator(self):
+        """非交互模式下 EXECUTOR_DONE 返回 FROM_EVALUATOR。"""
+        result = prompt_resume_choice(
+            RunStatus.INTERRUPTED,
+            last_run_id="run-001",
+            phase=RunPhase.EXECUTOR_DONE,
+            interactive=False,
+        )
+        assert result == ResumeChoice.FROM_EVALUATOR
+
+    def test_non_interactive_init_returns_continue(self):
+        """非交互模式下 INIT 返回 CONTINUE。"""
+        result = prompt_resume_choice(
+            RunStatus.INTERRUPTED,
+            last_run_id="run-001",
+            phase=RunPhase.INIT,
+            interactive=False,
+        )
+        assert result == ResumeChoice.CONTINUE
+
+    def test_interactive_evaluator_done_default_is_from_checker(self, monkeypatch):
+        """交互模式下 EVALUATOR_DONE 默认选择是 FROM_CHECKER。"""
+        monkeypatch.setattr("builtins.input", lambda _: "")  # 直接回车
+        result = prompt_resume_choice(
+            RunStatus.INTERRUPTED,
+            last_run_id="run-001",
+            phase=RunPhase.EVALUATOR_DONE,
+            interactive=True,
+        )
+        assert result == ResumeChoice.FROM_CHECKER
+
+    def test_interactive_evaluator_done_choice_2_is_from_evaluator(self, monkeypatch):
+        """交互模式下 EVALUATOR_DONE 选择 2 是 FROM_EVALUATOR。"""
+        monkeypatch.setattr("builtins.input", lambda _: "2")
+        result = prompt_resume_choice(
+            RunStatus.INTERRUPTED,
+            last_run_id="run-001",
+            phase=RunPhase.EVALUATOR_DONE,
+            interactive=True,
+        )
+        assert result == ResumeChoice.FROM_EVALUATOR
+
+    def test_interactive_evaluator_done_choice_4_is_reset(self, monkeypatch):
+        """交互模式下 EVALUATOR_DONE 选择 4 是 RESET。"""
+        monkeypatch.setattr("builtins.input", lambda _: "4")
+        result = prompt_resume_choice(
+            RunStatus.INTERRUPTED,
+            last_run_id="run-001",
+            phase=RunPhase.EVALUATOR_DONE,
+            interactive=True,
+        )
+        assert result == ResumeChoice.RESET
+
+    def test_interactive_executor_done_default_is_from_evaluator(self, monkeypatch):
+        """交互模式下 EXECUTOR_DONE 默认选择是 FROM_EVALUATOR。"""
+        monkeypatch.setattr("builtins.input", lambda _: "")
+        result = prompt_resume_choice(
+            RunStatus.INTERRUPTED,
+            last_run_id="run-001",
+            phase=RunPhase.EXECUTOR_DONE,
+            interactive=True,
+        )
+        assert result == ResumeChoice.FROM_EVALUATOR
+
+
+# === 新增辅助函数 ===
+
+def _create_complete_run_with_checker(run_dir: Path, passed: bool = True) -> None:
+    """创建包含 checker result 的完整 run 目录结构。"""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    
+    for subdir in ["logs", "artifacts", "eval-report", "checker-result"]:
+        (run_dir / subdir).mkdir(exist_ok=True)
+    
+    report_content = "## Evaluation Report\n\n**Result: PASSED**" if passed else "## Evaluation Report\n\n**Result: FAILED**"
+    (run_dir / "eval-report" / "report.md").write_text(report_content)
+    
+    checker_content = "PASSED" if passed else "FAILED"
+    (run_dir / "checker-result" / "result.md").write_text(checker_content)

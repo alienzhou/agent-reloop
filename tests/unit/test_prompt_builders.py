@@ -69,24 +69,24 @@ class TestBuildExecutorPrompt:
 class TestBuildEvaluatorPrompt:
     """evaluator prompt 构建逻辑"""
 
-    def test_contains_artifacts_path(self):
+    def test_contains_solution_path(self):
         prompt = build_evaluator_prompt(
-            artifacts_dir="run-sets/run-001/artifacts",
+            solution_dir="task/solution",
             eval_skill="Check output format",
         )
-        assert "run-sets/run-001/artifacts" in prompt
+        assert "task/solution" in prompt
 
     def test_contains_eval_skill_content(self):
         skill_body = "## Evaluation criteria\n- L0: files exist\n- L1: format check"
         prompt = build_evaluator_prompt(
-            artifacts_dir="run-sets/run-001/artifacts",
+            solution_dir="task/solution",
             eval_skill=skill_body,
         )
         assert skill_body in prompt
 
     def test_skill_inlined_not_as_flag(self):
         prompt = build_evaluator_prompt(
-            artifacts_dir="path",
+            solution_dir="path",
             eval_skill="skill content",
         )
         assert "--skill" not in prompt

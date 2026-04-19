@@ -13,7 +13,7 @@
 1. **读取 Evaluator Skill**：理解 L0/L1/L2 标准
 2. **读取验证脚本**：理解机械性检查逻辑
 3. **推断输出**：构建能通过所有检查的 Mock 输出
-4. **生成 artifacts**：写入 `run-sets/run-mock/artifacts/`
+4. **生成 solution**：写入 `run-sets/run-mock/solution/`
 5. **运行验证**：执行 L0/L1 脚本验证 Mock
 
 ## 推断规则
@@ -36,12 +36,12 @@
 
 ## 输出格式
 
-在 `run-sets/run-mock/artifacts/` 下生成所有必要文件。
+在 `run-sets/run-mock/solution/` 下生成所有必要文件。
 
 文件结构应该模拟真实执行器的输出，例如：
 ```
 run-sets/run-mock/
-├── artifacts/
+├── solution/
 │   ├── word_count.py      # Mock 生成的代码
 │   ├── README.md          # Mock 生成的文档
 │   └── ...
@@ -73,7 +73,7 @@ notes: "Mock 生成的最小满足输出"
 
 1. **复制到 solution**（临时）
    ```bash
-   cp -r run-sets/run-mock/artifacts/* task/solution/
+   cp -r run-sets/run-mock/solution/* task/solution/
    ```
 
 2. **运行 L0 检查**
@@ -120,9 +120,9 @@ notes: "Mock 生成的最小满足输出"
 - [ ] task/solution/README.md 存在
 ```
 
-### 输出 (Mock artifacts)
+### 输出 (Mock solution)
 
-#### run-sets/run-mock/artifacts/word_count.py
+#### run-sets/run-mock/solution/word_count.py
 ```python
 #!/usr/bin/env python3
 """词频统计脚本（Mock 版本）。"""
@@ -147,7 +147,7 @@ if __name__ == "__main__":
     main()
 ```
 
-#### run-sets/run-mock/artifacts/README.md
+#### run-sets/run-mock/solution/README.md
 ```markdown
 # 词频统计工具
 
@@ -164,5 +164,5 @@ cat input.txt | python word_count.py
 
 ## 输出位置
 
-- Mock artifacts: `run-sets/run-mock/artifacts/`
+- Mock solution: `run-sets/run-mock/solution/`
 - 元数据: `run-sets/run-mock/metadata.yaml`

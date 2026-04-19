@@ -213,10 +213,10 @@ def _get_evaluator_template() -> str:
 
 
 def _init_mock() -> None:
-    """运行 Mocker，生成 Mock artifacts 并验证 Evaluator。"""
+    """运行 Mocker，生成 Mock solution 并验证 Evaluator。"""
     project_root = Path.cwd()
     eval_file = project_root / "task" / "EVAL_SKILL.md"
-    mock_dir = project_root / "run-sets" / "run-mock" / "artifacts"
+    mock_dir = project_root / "run-sets" / "run-mock" / "solution"
     skill_path = _get_meta_skill_path("mocker")
 
     print("🎭 Mocker")
@@ -230,7 +230,7 @@ def _init_mock() -> None:
 
     # 检查 Mock 目录是否存在
     if mock_dir.exists() and any(mock_dir.iterdir()):
-        print(f"⚠️  Mock artifacts 目录已存在: {mock_dir}")
+        print(f"⚠️  Mock solution 目录已存在: {mock_dir}")
         try:
             overwrite = typer.confirm("是否清空并重新生成？", default=False)
             if not overwrite:
@@ -252,14 +252,14 @@ def _init_mock() -> None:
         raise typer.Exit(1)
 
     # 显示引导信息
-    print("\n请在 AI 对话中使用以下 Skill 生成 Mock artifacts:")
+    print("\n请在 AI 对话中使用以下 Skill 生成 Mock solution:")
     print(f"  📄 Skill 文件: {skill_path}")
     print(f"  📖 Evaluator 文件: {eval_file}")
     print(f"  📁 输出目录: {mock_dir}")
     print("\nMocker 将:")
     print("  1. 读取 EVAL_SKILL.md 中的 L0/L1/L2 标准")
     print("  2. 推断能通过所有检查的输出样本")
-    print("  3. 生成 Mock artifacts 到 run-sets/run-mock/artifacts/")
+    print("  3. 生成 Mock solution 到 run-sets/run-mock/solution/")
     print("  4. 运行 Evaluator 验证 Mock 是否通过")
 
 
@@ -289,7 +289,7 @@ def init(
     Meta Skills 说明:
       intent     - 交互式定义任务目标，生成 task/INTENT.md
       evaluator  - 交互式定义评估标准，生成 task/EVAL_SKILL.md
-      mock       - 生成 Mock artifacts，验证 Evaluator 逻辑
+      mock       - 生成 Mock solution，验证 Evaluator 逻辑
     """
     if target is None:
         # 原有的项目初始化逻辑

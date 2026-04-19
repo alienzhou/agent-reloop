@@ -38,7 +38,6 @@ project-root/
 ├── run-sets/                    # Asset zone — one folder per iteration round
 │   ├── run-001/
 │   │   ├── logs/                # Execution logs
-│   │   ├── artifacts/           # Execution output (final, not intermediate)
 │   │   └── eval-report/         # L0/L1/L2 evaluation results
 │   ├── run-002/
 │   └── ...
@@ -61,7 +60,7 @@ The init phase is agent-driven and interactive. Three built-in **Meta Skills** w
 | ---- | ------------------- | -------------------- | ---------------------------------- |
 | 1    | INTENT Generator    | `task/INTENT.md`     | Define what the task is            |
 | 2    | Evaluator Generator | Eval Skill + scripts | Define how to verify success       |
-| 3    | Mocker              | Mocked artifacts     | Validate the evaluator makes sense |
+| 3    | Mocker              | Mocked solution      | Validate the evaluator makes sense |
 
 
 ### 2. Run the Iteration Loop
@@ -77,7 +76,7 @@ The Python loop will:
 
 1. Set up an empty `run-xxx/` directory
 2. Call the **Executor** (Agent + INTENT + last eval feedback)
-3. Call the **Evaluator** (Agent + artifacts + eval skill)
+3. Call the **Evaluator** (Agent + solution + eval skill)
 4. Call the **Checker** (Agent + eval report → pass/fail)
 5. If failed, loop back; if passed, exit
 

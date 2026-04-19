@@ -52,7 +52,6 @@ class CheckerResultNotFoundError(Exception):
 _EXEC_SPEC_TEMPLATE = """## Execution Rules
 
 - Solution code goes in: {solution_dir}
-- Execution artifacts (final outputs) go in: {artifacts_dir}
 - Execution logs go in: {logs_dir}
 - Do NOT modify files outside these directories.
 - Iterate on the existing solution — do not recreate from scratch each round.
@@ -258,7 +257,6 @@ def _run_loop_with_live_ui(
             else:
                 exec_spec = _EXEC_SPEC_TEMPLATE.format(
                     solution_dir=str(project_root / "task" / "solution"),
-                    artifacts_dir=str(run_dir / "artifacts"),
                     logs_dir=str(run_dir / "logs"),
                 )
                 executor_prompt = build_executor_prompt(intent, last_eval_result, exec_spec)
@@ -307,8 +305,8 @@ def _run_loop_with_live_ui(
                 logger.info("Skipping evaluator (resume mode)")
                 # last_eval_result 已在前面设置
             else:
-                artifacts_dir = str(run_dir / "artifacts")
-                evaluator_prompt = build_evaluator_prompt(artifacts_dir, eval_skill)
+                solution_dir = str(project_root / "task" / "solution")
+                evaluator_prompt = build_evaluator_prompt(solution_dir, eval_skill)
                 logger.info("Running evaluator...")
 
                 _log_prompt(log_paths["prompt"], "EVALUATOR", evaluator_prompt)
@@ -487,7 +485,6 @@ def _run_loop_classic(
         else:
             exec_spec = _EXEC_SPEC_TEMPLATE.format(
                 solution_dir=str(project_root / "task" / "solution"),
-                artifacts_dir=str(run_dir / "artifacts"),
                 logs_dir=str(run_dir / "logs"),
             )
             executor_prompt = build_executor_prompt(intent, last_eval_result, exec_spec)

@@ -29,12 +29,12 @@ class TestPromptDriverWiring:
     def test_evaluator_prompt_passed_to_driver(self):
         driver = MockDriver(responses=["eval report"])
         prompt = build_evaluator_prompt(
-            artifacts_dir="run-sets/run-001/artifacts",
+            solution_dir="task/solution",
             eval_skill="Check file count >= 10",
         )
         driver.run(prompt=prompt, workdir="/work")
 
-        assert "run-sets/run-001/artifacts" in driver.call_log[0]["prompt"]
+        assert "task/solution" in driver.call_log[0]["prompt"]
         assert "Check file count >= 10" in driver.call_log[0]["prompt"]
 
     def test_checker_prompt_passed_to_driver(self):
@@ -57,7 +57,7 @@ class TestPromptDriverWiring:
         """Skill 内容应完整出现在 prompt 中（内联，非 flag）"""
         skill = "## L0\n- files exist\n## L1\n- format ok\n## L2\n- quality check"
         prompt = build_evaluator_prompt(
-            artifacts_dir="path/to/artifacts",
+            solution_dir="task/solution",
             eval_skill=skill,
         )
         assert "## L0" in prompt

@@ -27,7 +27,7 @@ def next_run_id(run_sets_dir: Path) -> str:
 def init_workspace(project_root: Path) -> Path:
     """初始化一次迭代的工作空间。
 
-    创建 run-sets/run-{id}/ 及其子目录（logs, artifacts, eval-report），
+    创建 run-sets/run-{id}/ 及其子目录（logs, eval-report），
     同时确保 task/solution/ 存在。
 
     Returns:
@@ -40,7 +40,7 @@ def init_workspace(project_root: Path) -> Path:
     run_dir = run_sets_dir / run_id
     run_dir.mkdir()
 
-    for sub in ("logs", "artifacts", "eval-report"):
+    for sub in ("logs", "eval-report"):
         sub_dir = run_dir / sub
         sub_dir.mkdir()
         (sub_dir / ".gitkeep").write_text("")

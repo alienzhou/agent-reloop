@@ -69,9 +69,10 @@ class TestInitWorkspace:
         run_dir = init_workspace(tmp_path)
         assert (run_dir / "logs").is_dir()
 
-    def test_creates_artifacts_subdirectory(self, tmp_path):
+    def test_no_artifacts_subdirectory(self, tmp_path):
+        """artifacts 目录已移除，solution 放在 task/solution"""
         run_dir = init_workspace(tmp_path)
-        assert (run_dir / "artifacts").is_dir()
+        assert not (run_dir / "artifacts").exists()
 
     def test_creates_eval_report_subdirectory(self, tmp_path):
         run_dir = init_workspace(tmp_path)
@@ -101,6 +102,6 @@ class TestInitWorkspace:
     def test_full_sublayout(self, tmp_path):
         """验证完整的子目录结构"""
         run_dir = init_workspace(tmp_path)
-        expected_subdirs = ["logs", "artifacts", "eval-report"]
+        expected_subdirs = ["logs", "eval-report"]
         for sub in expected_subdirs:
             assert (run_dir / sub).is_dir(), f"{sub}/ should exist"

@@ -305,9 +305,8 @@ class TestDirectoryLayoutAfterRun:
         for run_id in ["run-001", "run-002"]:
             run_dir = tmp_path / "run-sets" / run_id
             assert (run_dir / "logs").is_dir()
-            assert (run_dir / "artifacts").is_dir()
             assert (run_dir / "eval-report").is_dir()
-            assert (run_dir / "checker-result").is_dir()  # 新增：checker-result 目录
+            assert (run_dir / "checker-result").is_dir()  # checker-result 目录
 
     def test_task_solution_exists(self, tmp_path):
         _init_git_repo(tmp_path)

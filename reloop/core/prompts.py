@@ -31,20 +31,20 @@ def build_executor_prompt(
 
 
 def build_evaluator_prompt(
-    artifacts_dir: str,
+    solution_dir: str,
     eval_skill: str,
 ) -> str:
     """构建 evaluator 的 prompt。
 
-    将 artifacts 路径和 evaluator Skill 内容内联组装。
+    将 solution 路径和 evaluator Skill 内容内联组装。
     """
     return (
         "# Evaluation Skill\n\n"
         + eval_skill
         + "\n\n---\n\n"
-        + "# Artifacts to Evaluate\n\n"
-        + f"Artifacts directory: {artifacts_dir}\n\n"
-        + "Evaluate the artifacts according to the skill above. "
+        + "# Solution to Evaluate\n\n"
+        + f"Solution directory: {solution_dir}\n\n"
+        + "Evaluate the solution according to the skill above. "
         + "Run L0, L1, L2 checks in order with short-circuit logic. "
         + "Write the evaluation report."
     )

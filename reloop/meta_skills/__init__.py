@@ -3,7 +3,7 @@
 Meta Skills 在初始化阶段使用，帮助用户定义任务目标和评估标准：
 - INTENT Builder: 澄清任务目标，生成 INTENT.md
 - Evaluator Builder: 交互式定义评估标准，生成 EVAL_SKILL.md
-- Mocker: 生成 Mock artifacts，验证 Evaluator 逻辑
+- Mocker: 生成 Mock solution，验证 Evaluator 逻辑
 """
 
 from pathlib import Path

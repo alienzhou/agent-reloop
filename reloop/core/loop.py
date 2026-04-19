@@ -225,6 +225,7 @@ def _run_loop_with_live_ui(
     ui = ReloopLiveUI(
         max_output_lines=stream_max_lines,
         accumulated_time=accumulated_time,
+        project_root=project_root,
     )
     
     last_eval_report_path: Optional[Path] = None
@@ -490,6 +491,23 @@ def _run_loop_classic(
     # 开始新会话
     start_session(project_root)
     session_start_time = time.time()
+    last_timing_save = session_start_time  # 上次保存计时的时间
+    timing_save_interval = 30.0  # 每 30 秒保存一次
+    
+    def maybe_save_timing() -> None:
+        """检查并保存计时数据（每 30 秒保存一次）。"""
+        nonlocal last_timing_save
+        now = time.time()
+        if now - last_timing_save >= timing_save_interval:
+            try:
+                session_elapsed = now - session_start_time
+                timing = load_timing(project_root)
+                timing.total_elapsed_seconds = accumulated_time + session_elapsed
+                save_timing(project_root, timing)
+                last_timing_save = now
+                logger.debug(f"Timing saved: {timing.total_elapsed_seconds:.1f}s")
+            except Exception as e:
+                logger.warning(f"Failed to save timing: {e}")
     
     last_eval_report_path: Optional[Path] = None
     run_ids: List[str] = []
@@ -547,16 +565,21 @@ def _run_loop_classic(
             # 记录 prompt
             _log_prompt(log_paths["prompt"], "EXECUTOR", executor_prompt)
 
-            # 流式输出
+            # 流式输出（带定时保存）
             executor_stream = StreamOutput(
                 log_path=log_paths["executor"],
                 max_lines=stream_max_lines,
             )
+            
+            def executor_callback(chunk: str) -> None:
+                executor_stream.write(chunk)
+                maybe_save_timing()
+            
             print(f"[{time.strftime('%H:%M:%S')}] 📝 Executor running...")
             executor_output = executor_driver.run(
                 prompt=executor_prompt,
                 workdir=workdir,
-                stream_callback=executor_stream.write,
+                stream_callback=executor_callback,
             )
             executor_stream.finalize()
             print(f"[{time.strftime('%H:%M:%S')}] ✅ Executor done")
@@ -590,11 +613,16 @@ def _run_loop_classic(
                 log_path=log_paths["evaluator"],
                 max_lines=stream_max_lines,
             )
+            
+            def evaluator_callback(chunk: str) -> None:
+                evaluator_stream.write(chunk)
+                maybe_save_timing()
+            
             print(f"[{time.strftime('%H:%M:%S')}] 🔍 Evaluator running...")
             eval_output = evaluator_driver.run(
                 prompt=evaluator_prompt,
                 workdir=workdir,
-                stream_callback=evaluator_stream.write,
+                stream_callback=evaluator_callback,
             )
             evaluator_stream.finalize()
             print(f"[{time.strftime('%H:%M:%S')}] ✅ Evaluator done")
@@ -637,11 +665,16 @@ def _run_loop_classic(
             log_path=log_paths["checker"],
             max_lines=stream_max_lines,
         )
+        
+        def checker_callback(chunk: str) -> None:
+            checker_stream.write(chunk)
+            maybe_save_timing()
+        
         print(f"[{time.strftime('%H:%M:%S')}] ✅ Checker running...")
         checker_output = checker_driver.run(
             prompt=checker_prompt,
             workdir=workdir,
-            stream_callback=checker_stream.write,
+            stream_callback=checker_callback,
         )
         checker_stream.finalize()
 

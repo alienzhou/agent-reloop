@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import deque
 from contextlib import contextmanager
@@ -18,10 +19,13 @@ from typing import Callable, Generator, Optional
 from rich.console import Console, Group
 from rich.layout import Layout
 from rich.live import Live
+from rich.markup import escape
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 from rich.text import Text
+
+logger = logging.getLogger(__name__)
 
 
 class StageStatus(Enum):
@@ -89,21 +93,33 @@ class StreamPanel:
     def append(self, line: str) -> None:
         """添加一行日志。"""
         timestamp = time.strftime("%H:%M:%S")
-        self.lines.append(f"[dim]{timestamp}[/dim] {line}")
+        # 转义用户输入，防止 Rich markup 解析错误
+        safe_line = escape(line)
+        self.lines.append(f"[dim]{timestamp}[/dim] {safe_line}")
     
     def clear(self) -> None:
         """清空日志。"""
         self.lines.clear()
     
     def render(self) -> Panel:
-        """渲染面板。"""
-        content = "\n".join(self.lines) if self.lines else "[dim]Waiting for output...[/dim]"
-        return Panel(
-            content,
-            title=f"[bold]{self.title}[/bold]",
-            border_style="blue",
-            height=self.max_lines + 2,
-        )
+        """渲染面板（带容错）。"""
+        try:
+            content = "\n".join(self.lines) if self.lines else "[dim]Waiting for output...[/dim]"
+            return Panel(
+                content,
+                title=f"[bold]{self.title}[/bold]",
+                border_style="blue",
+                height=self.max_lines + 2,
+            )
+        except Exception as e:
+            logger.warning(f"StreamPanel render error: {e}")
+            # 返回安全的备用面板
+            return Panel(
+                "[dim]Render error - check logs[/dim]",
+                title="Output",
+                border_style="yellow",
+                height=self.max_lines + 2,
+            )
 
 
 class ReloopLiveUI:
@@ -114,11 +130,15 @@ class ReloopLiveUI:
     - 下部：滚动输出日志
     """
     
+    # 计时数据保存间隔（秒）
+    TIMING_SAVE_INTERVAL: float = 30.0
+    
     def __init__(
         self,
         max_output_lines: int = 15,
         console: Optional[Console] = None,
         accumulated_time: float = 0.0,
+        project_root: Optional[Path] = None,
     ) -> None:
         """初始化 Live UI。
         
@@ -126,6 +146,7 @@ class ReloopLiveUI:
             max_output_lines: 输出面板最大行数
             console: 可选的 Console 实例
             accumulated_time: 累计时间（秒），用于 resume 场景
+            project_root: 项目根目录，用于定时保存计时数据
         """
         self.console = console or Console()
         self.stream_panel = StreamPanel(max_lines=max_output_lines)
@@ -134,70 +155,81 @@ class ReloopLiveUI:
         self._start_time: float = 0
         self._accumulated_time: float = accumulated_time
         self._history: list[tuple[int, str]] = []  # (round_num, result)
+        self._project_root: Optional[Path] = project_root
+        self._last_timing_save: float = 0  # 上次保存计时的时间
     
     def _build_status_panel(self) -> Panel:
-        """构建状态面板。"""
-        if not self.state:
-            return Panel("[dim]Initializing...[/dim]", title="Status")
-        
-        # 创建状态表格
-        table = Table(show_header=False, box=None, padding=(0, 1))
-        table.add_column("Key", style="bold")
-        table.add_column("Value")
-        
-        # Round 信息
-        session_elapsed = time.time() - self._start_time
-        total_elapsed = self._accumulated_time + session_elapsed
-        
-        # 格式化时间显示
-        hours = int(total_elapsed // 3600)
-        minutes = int((total_elapsed % 3600) // 60)
-        secs = int(total_elapsed % 60)
-        if hours > 0:
-            elapsed_str = f"{hours:02d}:{minutes:02d}:{secs:02d}"
-        else:
-            elapsed_str = f"{minutes:02d}:{secs:02d}"
-        
-        # 如果有累计时间，显示额外信息
-        if self._accumulated_time > 0:
-            elapsed_str += f" [dim](+{int(self._accumulated_time)}s 累计)[/dim]"
-        
-        table.add_row("Round", f"[bold cyan]{self.state.round_num}[/] / {self.state.max_rounds}")
-        table.add_row("Run ID", f"[dim]{self.state.run_id}[/dim]")
-        table.add_row("Elapsed", f"[yellow]{elapsed_str}[/yellow]")
-        
-        # 阶段状态（水平排列）
-        stages_text = Text()
-        for i, stage in enumerate(self.state.stages):
-            if i > 0:
-                stages_text.append(" → ", style="dim")
-            stages_text.append_text(stage.display)
-        
-        table.add_row("Stages", stages_text)
-        
-        # 历史结果
-        if self._history:
-            history_text = Text()
-            for i, (rnd, result) in enumerate(self._history[-5:]):  # 最近5轮
+        """构建状态面板（带容错）。"""
+        try:
+            if not self.state:
+                return Panel("[dim]Initializing...[/dim]", title="Status")
+            
+            # 创建状态表格
+            table = Table(show_header=False, box=None, padding=(0, 1))
+            table.add_column("Key", style="bold")
+            table.add_column("Value")
+            
+            # Round 信息
+            session_elapsed = time.time() - self._start_time
+            total_elapsed = self._accumulated_time + session_elapsed
+            
+            # 格式化时间显示
+            hours = int(total_elapsed // 3600)
+            minutes = int((total_elapsed % 3600) // 60)
+            secs = int(total_elapsed % 60)
+            if hours > 0:
+                elapsed_str = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+            else:
+                elapsed_str = f"{minutes:02d}:{secs:02d}"
+            
+            # 如果有累计时间，显示额外信息
+            if self._accumulated_time > 0:
+                elapsed_str += f" [dim](+{int(self._accumulated_time)}s 累计)[/dim]"
+            
+            table.add_row("Round", f"[bold cyan]{self.state.round_num}[/] / {self.state.max_rounds}")
+            table.add_row("Run ID", f"[dim]{self.state.run_id}[/dim]")
+            table.add_row("Elapsed", f"[yellow]{elapsed_str}[/yellow]")
+            
+            # 阶段状态（水平排列）
+            stages_text = Text()
+            for i, stage in enumerate(self.state.stages):
                 if i > 0:
-                    history_text.append(" | ", style="dim")
-                color = "green" if result == "PASSED" else "red"
-                history_text.append(f"R{rnd}:{result}", style=color)
-            table.add_row("History", history_text)
-        
-        # 当前结果
-        if self.state.result:
-            color = "green bold" if self.state.result == "PASSED" else "red bold"
-            table.add_row("Result", Text(self.state.result, style=color))
-        
-        return Panel(table, title="[bold]🔄 Reloop Status[/bold]", border_style="cyan")
+                    stages_text.append(" → ", style="dim")
+                stages_text.append_text(stage.display)
+            
+            table.add_row("Stages", stages_text)
+            
+            # 历史结果
+            if self._history:
+                history_text = Text()
+                for i, (rnd, result) in enumerate(self._history[-5:]):  # 最近5轮
+                    if i > 0:
+                        history_text.append(" | ", style="dim")
+                    color = "green" if result == "PASSED" else "red"
+                    history_text.append(f"R{rnd}:{result}", style=color)
+                table.add_row("History", history_text)
+            
+            # 当前结果
+            if self.state.result:
+                color = "green bold" if self.state.result == "PASSED" else "red bold"
+                table.add_row("Result", Text(self.state.result, style=color))
+            
+            return Panel(table, title="[bold]🔄 Reloop Status[/bold]", border_style="cyan")
+        except Exception as e:
+            logger.warning(f"_build_status_panel error: {e}")
+            return Panel("[dim]Status unavailable[/dim]", title="Status", border_style="yellow")
     
     def _build_layout(self) -> Group:
-        """构建完整布局。"""
-        return Group(
-            self._build_status_panel(),
-            self.stream_panel.render(),
-        )
+        """构建完整布局（带容错）。"""
+        try:
+            return Group(
+                self._build_status_panel(),
+                self.stream_panel.render(),
+            )
+        except Exception as e:
+            logger.warning(f"_build_layout error: {e}")
+            # 返回空布局
+            return Group(Panel("[dim]Layout error[/dim]", title="Error"))
     
     @contextmanager
     def live_context(self) -> Generator[None, None, None]:
@@ -226,9 +258,38 @@ class ReloopLiveUI:
         return self._accumulated_time + self.get_session_elapsed()
     
     def refresh(self) -> None:
-        """刷新显示。"""
+        """刷新显示（带容错）。"""
         if self._live:
-            self._live.update(self._build_layout())
+            try:
+                self._live.update(self._build_layout())
+                # 检查是否需要保存计时数据
+                self._maybe_save_timing()
+            except Exception as e:
+                logger.warning(f"UI refresh error: {e}")
+    
+    def _maybe_save_timing(self) -> None:
+        """检查并保存计时数据（每 30 秒保存一次）。
+        
+        确保即使程序异常退出，计时数据也不会丢失太多（最多丢失 30 秒）。
+        """
+        if not self._project_root:
+            return
+        
+        now = time.time()
+        if now - self._last_timing_save < self.TIMING_SAVE_INTERVAL:
+            return
+        
+        try:
+            from reloop.core.timing import load_timing, save_timing
+            
+            session_elapsed = self.get_session_elapsed()
+            timing = load_timing(self._project_root)
+            timing.total_elapsed_seconds = self._accumulated_time + session_elapsed
+            save_timing(self._project_root, timing)
+            self._last_timing_save = now
+            logger.debug(f"Timing saved: {timing.total_elapsed_seconds:.1f}s")
+        except Exception as e:
+            logger.warning(f"Failed to save timing: {e}")
     
     def start_round(self, round_num: int, max_rounds: int, run_id: str = "") -> None:
         """开始新一轮迭代。"""
@@ -266,9 +327,12 @@ class ReloopLiveUI:
         self.refresh()
     
     def write_output(self, line: str) -> None:
-        """写入输出日志。"""
-        self.stream_panel.append(line)
-        self.refresh()
+        """写入输出日志（带容错）。"""
+        try:
+            self.stream_panel.append(line)
+            self.refresh()
+        except Exception as e:
+            logger.warning(f"UI write_output error: {e}")
     
     def get_stream_callback(self) -> Callable[[str], None]:
         """返回流式输出回调函数。"""

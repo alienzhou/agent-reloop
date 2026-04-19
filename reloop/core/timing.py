@@ -10,11 +10,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # 计时数据文件名
 TIMING_FILE = "timing.json"
@@ -81,6 +84,7 @@ def load_timing(project_root: Path) -> TimingData:
         计时数据，如果文件不存在则返回空的 TimingData
     """
     timing_file = get_timing_file_path(project_root)
+    logger.debug(f"Loading timing from {timing_file}")
     
     if not timing_file.exists():
         return TimingData()
@@ -108,6 +112,7 @@ def save_timing(project_root: Path, timing: TimingData) -> None:
         json.dumps(timing.to_dict(), indent=2, ensure_ascii=False),
         encoding="utf-8"
     )
+    logger.debug(f"Saving timing: total={timing.total_elapsed_seconds:.1f}s")
 
 
 def start_session(project_root: Path) -> TimingData:
@@ -119,6 +124,7 @@ def start_session(project_root: Path) -> TimingData:
     Returns:
         更新后的计时数据（含累计时间）
     """
+    logger.info("Starting timing session")
     timing = load_timing(project_root)
     timing.last_session_start = time.time()
     timing.session_count += 1
@@ -140,6 +146,7 @@ def end_session(project_root: Path, session_elapsed: float) -> TimingData:
     timing.last_session_end = time.time()
     timing.total_elapsed_seconds += session_elapsed
     save_timing(project_root, timing)
+    logger.info(f"Session ended: duration={session_elapsed:.1f}s")
     return timing
 
 
@@ -152,6 +159,7 @@ def reset_timing(project_root: Path) -> None:
     timing_file = get_timing_file_path(project_root)
     if timing_file.exists():
         timing_file.unlink()
+    logger.info("Timing reset")
 
 
 def format_elapsed(seconds: float) -> str:

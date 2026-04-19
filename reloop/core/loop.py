@@ -320,11 +320,17 @@ def _run_loop_with_live_ui(
                     executor_stream.write(chunk)
                     ui.write_output(chunk)
 
-                executor_output = executor_driver.run(
-                    prompt=executor_prompt,
-                    workdir=workdir,
-                    stream_callback=executor_callback,
-                )
+                logger.debug("Calling executor driver, prompt_len=%d", len(executor_prompt))
+                try:
+                    executor_output = executor_driver.run(
+                        prompt=executor_prompt,
+                        workdir=workdir,
+                        stream_callback=executor_callback,
+                    )
+                    logger.debug("executor driver completed, output_len=%d", len(executor_output))
+                except Exception as e:
+                    logger.error("driver failed: stage=executor, round=%d, run_id=%s: %s", round_num, run_id, e)
+                    raise
                 executor_stream.finalize()
                 ui.complete_stage("Executor")
 
@@ -373,11 +379,17 @@ def _run_loop_with_live_ui(
                     evaluator_stream.write(chunk)
                     ui.write_output(chunk)
 
-                eval_output = evaluator_driver.run(
-                    prompt=evaluator_prompt,
-                    workdir=workdir,
-                    stream_callback=evaluator_callback,
-                )
+                logger.debug("Calling evaluator driver, prompt_len=%d", len(evaluator_prompt))
+                try:
+                    eval_output = evaluator_driver.run(
+                        prompt=evaluator_prompt,
+                        workdir=workdir,
+                        stream_callback=evaluator_callback,
+                    )
+                    logger.debug("evaluator driver completed, output_len=%d", len(eval_output))
+                except Exception as e:
+                    logger.error("driver failed: stage=evaluator, round=%d, run_id=%s: %s", round_num, run_id, e)
+                    raise
                 evaluator_stream.finalize()
                 ui.complete_stage("Evaluator")
 
@@ -423,11 +435,17 @@ def _run_loop_with_live_ui(
                 checker_stream.write(chunk)
                 ui.write_output(chunk)
 
-            checker_output = checker_driver.run(
-                prompt=checker_prompt,
-                workdir=workdir,
-                stream_callback=checker_callback,
-            )
+            logger.debug("Calling checker driver, prompt_len=%d", len(checker_prompt))
+            try:
+                checker_output = checker_driver.run(
+                    prompt=checker_prompt,
+                    workdir=workdir,
+                    stream_callback=checker_callback,
+                )
+                logger.debug("checker driver completed, output_len=%d", len(checker_output))
+            except Exception as e:
+                logger.error("driver failed: stage=checker, round=%d, run_id=%s: %s", round_num, run_id, e)
+                raise
             checker_stream.finalize()
 
             # 从文件读取 checker 结果
@@ -621,11 +639,17 @@ def _run_loop_classic(
                 maybe_save_timing()
             
             print(f"[{time.strftime('%H:%M:%S')}] 📝 Executor running...")
-            executor_output = executor_driver.run(
-                prompt=executor_prompt,
-                workdir=workdir,
-                stream_callback=executor_callback,
-            )
+            logger.debug("Calling executor driver, prompt_len=%d", len(executor_prompt))
+            try:
+                executor_output = executor_driver.run(
+                    prompt=executor_prompt,
+                    workdir=workdir,
+                    stream_callback=executor_callback,
+                )
+                logger.debug("executor driver completed, output_len=%d", len(executor_output))
+            except Exception as e:
+                logger.error("driver failed: stage=executor, round=%d, run_id=%s: %s", round_num, run_id, e)
+                raise
             executor_stream.finalize()
             print(f"[{time.strftime('%H:%M:%S')}] ✅ Executor done")
 
@@ -673,11 +697,17 @@ def _run_loop_classic(
                 maybe_save_timing()
             
             print(f"[{time.strftime('%H:%M:%S')}] 🔍 Evaluator running...")
-            eval_output = evaluator_driver.run(
-                prompt=evaluator_prompt,
-                workdir=workdir,
-                stream_callback=evaluator_callback,
-            )
+            logger.debug("Calling evaluator driver, prompt_len=%d", len(evaluator_prompt))
+            try:
+                eval_output = evaluator_driver.run(
+                    prompt=evaluator_prompt,
+                    workdir=workdir,
+                    stream_callback=evaluator_callback,
+                )
+                logger.debug("evaluator driver completed, output_len=%d", len(eval_output))
+            except Exception as e:
+                logger.error("driver failed: stage=evaluator, round=%d, run_id=%s: %s", round_num, run_id, e)
+                raise
             evaluator_stream.finalize()
             print(f"[{time.strftime('%H:%M:%S')}] ✅ Evaluator done")
 
@@ -724,11 +754,17 @@ def _run_loop_classic(
             maybe_save_timing()
         
         print(f"[{time.strftime('%H:%M:%S')}] ✅ Checker running...")
-        checker_output = checker_driver.run(
-            prompt=checker_prompt,
-            workdir=workdir,
-            stream_callback=checker_callback,
-        )
+        logger.debug("Calling checker driver, prompt_len=%d", len(checker_prompt))
+        try:
+            checker_output = checker_driver.run(
+                prompt=checker_prompt,
+                workdir=workdir,
+                stream_callback=checker_callback,
+            )
+            logger.debug("checker driver completed, output_len=%d", len(checker_output))
+        except Exception as e:
+            logger.error("driver failed: stage=checker, round=%d, run_id=%s: %s", round_num, run_id, e)
+            raise
         checker_stream.finalize()
 
         # 从文件读取 checker 结果

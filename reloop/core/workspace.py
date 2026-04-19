@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 _RUN_DIR_PATTERN = re.compile(r"^run-(\d{3,})$")
 
@@ -14,6 +17,7 @@ def next_run_id(run_sets_dir: Path) -> str:
     扫描 run_sets_dir 下所有 run-xxx 目录，取最大序号 + 1。
     若目录不存在或无 run-xxx 子目录，返回 run-001。
     """
+    logger.debug("Calculating next run ID")
     max_num = 0
     if run_sets_dir.exists():
         for child in run_sets_dir.iterdir():
@@ -33,6 +37,7 @@ def init_workspace(project_root: Path) -> Path:
     Returns:
         新创建的 run 目录路径
     """
+    logger.info("Initializing workspace: %s", project_root)
     run_sets_dir = project_root / "run-sets"
     run_sets_dir.mkdir(parents=True, exist_ok=True)
 

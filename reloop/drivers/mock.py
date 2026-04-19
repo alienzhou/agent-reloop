@@ -7,10 +7,13 @@ MockDriver 不是纯测试工具，它是框架的正式组件。
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Callable, Dict, List, Optional
 
 from reloop.drivers.base import Driver
+
+logger = logging.getLogger(__name__)
 
 
 class MockDriverExhaustedError(Exception):
@@ -40,6 +43,12 @@ class MockDriver(Driver):
         self.responses = list(responses)
         self.delay_per_line = delay_per_line
         self.call_log: List[Dict[str, Any]] = []
+
+        logger.debug(
+            "MockDriver initialized with %d responses, delay_per_line=%.3fs",
+            len(self.responses),
+            delay_per_line,
+        )
 
     def run(
         self,
@@ -77,6 +86,13 @@ class MockDriver(Driver):
             )
 
         response = self.responses.pop(0)
+
+        logger.info(
+            "MockDriver returning response #%d (length=%d, remaining=%d)",
+            len(self.call_log),
+            len(response),
+            len(self.responses),
+        )
 
         # 模拟流式输出
         if stream_callback:
@@ -135,6 +151,7 @@ class CallbackMockDriver(MockDriver):
         if self.callbacks:
             callback = self.callbacks.pop(0)
             if callback is not None:
+                logger.debug("CallbackMockDriver executing callback before response")
                 callback(prompt=prompt, workdir=workdir)
 
         return super().run(

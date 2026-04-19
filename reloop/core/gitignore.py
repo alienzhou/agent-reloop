@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # 各语言模板（包含 Reloop 专用忽略项）
 GITIGNORE_TEMPLATES = {
@@ -135,6 +138,7 @@ def detect_project_language(path: Path) -> str:
     Returns:
         检测到的语言名称
     """
+    logger.debug("Detecting language")
     indicators = {
         "python": ["pyproject.toml", "setup.py", "requirements.txt", "Pipfile"],
         "java": ["pom.xml", "build.gradle", "build.gradle.kts"],
@@ -169,6 +173,7 @@ def generate_gitignore(path: Path, language: str | None = None) -> None:
         path: 项目路径
         language: 指定语言，None 则自动检测
     """
+    logger.info("Generating .gitignore")
     if language is None:
         language = detect_project_language(path)
 

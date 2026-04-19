@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def auto_commit_after_execution(project_root: Path, run_id: str) -> bool:
@@ -19,6 +22,7 @@ def auto_commit_after_execution(project_root: Path, run_id: str) -> bool:
     Returns:
         True 如果创建了 commit，False 如果没有变更
     """
+    logger.info(f"Auto-committing for run {run_id}")
     cwd = str(project_root)
 
     subprocess.run(
@@ -32,6 +36,7 @@ def auto_commit_after_execution(project_root: Path, run_id: str) -> bool:
         cwd=cwd, capture_output=True,
     )
     if result.returncode == 0:
+        logger.debug("No changes to commit")
         return False
 
     message = f"reloop: executor completed {run_id}"
@@ -39,4 +44,5 @@ def auto_commit_after_execution(project_root: Path, run_id: str) -> bool:
         ["git", "commit", "-m", message],
         cwd=cwd, capture_output=True, check=True,
     )
+    logger.debug(f"Committed: {message}")
     return True

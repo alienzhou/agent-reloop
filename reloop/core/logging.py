@@ -5,13 +5,18 @@
 - AgentLogger: Agent 输出的带时间戳写入器
 - log_driver_call: Driver CLI 调用记录
 - setup_system_logging: 系统日志初始化
+- setup_rotating_logger: 带轮转和 gzip 压缩的 Logger
 """
 
 from __future__ import annotations
 
+import gzip
 import logging
+import os
+import shutil
 import sys
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -244,6 +249,93 @@ def setup_system_logging(
     logger = logging.getLogger("reloop")
     logger.setLevel(level)
     logger.addHandler(file_handler)
+
+    return logger
+
+
+def _gzip_rotator(source: str, dest: str) -> None:
+    """日志轮转时的 gzip 压缩函数。
+
+    将源文件压缩为 gzip 格式并删除原文件。
+
+    Args:
+        source: 源文件路径
+        dest: 目标文件路径（实际会添加 .gz 后缀）
+    """
+    with open(source, "rb") as f_in:
+        with gzip.open(f"{dest}.gz", "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+    os.remove(source)
+
+
+def _gzip_namer(name: str) -> str:
+    """日志轮转时的文件命名函数。
+
+    Args:
+        name: 默认的轮转文件名
+
+    Returns:
+        添加 .gz 后缀的文件名
+    """
+    return name + ".gz"
+
+
+def setup_rotating_logger(
+    name: str,
+    log_path: Path,
+    level: int = logging.DEBUG,
+    max_bytes: int = 10 * 1024 * 1024,  # 10MB
+    backup_count: int = 5,
+) -> logging.Logger:
+    """创建带日志轮转和 gzip 压缩的 Logger。
+
+    使用 RotatingFileHandler 实现日志轮转，当文件达到 max_bytes 时
+    自动轮转并使用 gzip 压缩旧日志文件。
+
+    Args:
+        name: Logger 名称
+        log_path: 日志文件路径
+        level: 日志级别（默认 DEBUG）
+        max_bytes: 单个日志文件最大字节数（默认 10MB）
+        backup_count: 保留的备份文件数量（默认 5）
+
+    Returns:
+        配置好的 Logger 实例
+    """
+    # 确保日志目录存在
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 创建带轮转的文件 handler
+    file_handler = RotatingFileHandler(
+        str(log_path),
+        mode="a",
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding="utf-8",
+    )
+
+    # 配置 gzip 压缩
+    file_handler.rotator = _gzip_rotator
+    file_handler.namer = _gzip_namer
+
+    file_handler.setLevel(level)
+    file_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s.%(msecs)03d [%(levelname)s] [%(name)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+
+    # 获取或创建 logger
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+
+    # 避免重复添加 handler
+    if not any(
+        isinstance(h, RotatingFileHandler) and h.baseFilename == str(log_path.resolve())
+        for h in logger.handlers
+    ):
+        logger.addHandler(file_handler)
 
     return logger
 

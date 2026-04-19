@@ -11,8 +11,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 # 需要移除的敏感模式
@@ -66,6 +69,7 @@ def sanitize_eval_report(report: str, keep_summary: bool = True) -> str:
         >>> "task/scripts" not in sanitized
         True
     """
+    logger.debug(f"Sanitizing report: {len(report)} chars")
     if not report:
         return report
 
@@ -146,6 +150,7 @@ def extract_actionable_feedback(report: str) -> str:
         ... '''
         >>> feedback = extract_actionable_feedback(report)
     """
+    logger.debug("Extracting feedback")
     if not report:
         return report
 

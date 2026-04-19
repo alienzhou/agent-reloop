@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import subprocess
 from typing import Any, Callable, Optional
 
 from reloop.drivers.base import Driver
+
+logger = logging.getLogger(__name__)
 
 
 class FlickDriverError(Exception):
@@ -49,6 +52,14 @@ class FlickDriver(Driver):
         self.model = model
         self.mode = mode
         self.json_output = json_output
+
+        logger.debug(
+            "FlickDriver initialized: workspace=%s, model=%s, mode=%s, json_output=%s",
+            workspace,
+            model,
+            mode,
+            json_output,
+        )
 
     def run(
         self,
@@ -106,6 +117,9 @@ class FlickDriver(Driver):
             cmd.append("--duet-json")
 
         cmd.append(prompt)
+
+        logger.debug("Built flick command: %s", " ".join(cmd[:6]) + " ...")
+
         return cmd
 
     def _run_with_streaming(
@@ -134,6 +148,8 @@ class FlickDriver(Driver):
         """
         full_output: list[str] = []
 
+        logger.debug("Starting streaming execution in workdir=%s", workdir)
+
         try:
             process = subprocess.Popen(
                 cmd,
@@ -142,7 +158,9 @@ class FlickDriver(Driver):
                 stderr=subprocess.STDOUT,
                 # 使用二进制模式，避免在多字节字符中间截断时的解码错误
             )
+            logger.debug("Process started, pid=%s", process.pid)
         except FileNotFoundError:
+            logger.error("flick command not found")
             raise FlickDriverError("flick 命令未找到，请确保已安装 flick CLI")
 
         stdout_wrapper = None
@@ -187,6 +205,7 @@ class FlickDriver(Driver):
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()  # 确保进程完全终止
+            logger.error("Streaming execution timed out after %ss", timeout)
             raise FlickDriverError(f"flick link prompt 超时 ({timeout}s)")
         finally:
             # P2 修复: 显式关闭 TextIOWrapper（如果创建了的话）
@@ -197,6 +216,9 @@ class FlickDriver(Driver):
                     pass
 
         if process.returncode != 0:
+            logger.error(
+                "Streaming execution failed with exit code %s", process.returncode
+            )
             raise FlickDriverError(
                 f"flick link prompt 失败 (exit {process.returncode})"
             )
@@ -206,6 +228,8 @@ class FlickDriver(Driver):
         # JSON 处理（如果启用）
         if self.json_output and response:
             response = self._parse_json_response(response)
+
+        logger.debug("Streaming execution completed, response length=%d", len(response))
 
         return response
 
@@ -228,6 +252,8 @@ class FlickDriver(Driver):
         Raises:
             FlickDriverError: 执行失败或超时
         """
+        logger.debug("Starting blocking execution in workdir=%s", workdir)
+
         try:
             result = subprocess.run(
                 cmd,
@@ -237,8 +263,10 @@ class FlickDriver(Driver):
                 # 使用二进制模式，手动解码以处理可能的编码问题
             )
         except subprocess.TimeoutExpired:
+            logger.error("Blocking execution timed out after %ss", timeout)
             raise FlickDriverError(f"flick link prompt 超时 ({timeout}s)")
         except FileNotFoundError:
+            logger.error("flick command not found")
             raise FlickDriverError("flick 命令未找到，请确保已安装 flick CLI")
 
         if result.returncode != 0:
@@ -246,6 +274,11 @@ class FlickDriver(Driver):
             stderr = result.stderr
             if isinstance(stderr, bytes):
                 stderr = stderr.decode('utf-8', errors='replace')
+            logger.error(
+                "Blocking execution failed with exit code %s: %s",
+                result.returncode,
+                stderr[:200] if stderr else "",
+            )
             raise FlickDriverError(
                 f"flick link prompt 失败 (exit {result.returncode}): {stderr}"
             )
@@ -259,6 +292,8 @@ class FlickDriver(Driver):
         # JSON 处理（如果启用）
         if self.json_output and response:
             response = self._parse_json_response(response)
+
+        logger.debug("Blocking execution completed, response length=%d", len(response))
 
         return response
 
@@ -300,8 +335,17 @@ class FlickDriver(Driver):
 
         # 如果没有提取到任何文本，返回原始响应
         if not text_chunks:
+            logger.debug(
+                "JSON parsing: no text chunks extracted from %d objects, returning raw",
+                len(json_objects),
+            )
             return response
 
+        logger.debug(
+            "JSON parsing: extracted %d text chunks from %d objects",
+            len(text_chunks),
+            len(json_objects),
+        )
         return "".join(text_chunks)
 
     def _extract_json_objects(self, text: str) -> list[Any]:

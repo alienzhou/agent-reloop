@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 # XML 标签匹配模式
 CHECKER_RESULT_PATTERN = re.compile(
@@ -27,12 +30,18 @@ def parse_checker_result(output: str) -> bool:
     Raises:
         ValueError: 无法解析出结果时
     """
+    logger.debug("Parsing checker result, %d chars", len(output))
     # 尝试 XML 格式解析（优先）
     match = CHECKER_RESULT_PATTERN.search(output)
     if match:
-        return match.group(1).lower() == "passed"
+        result = match.group(1).lower()
+        logger.debug("Found XML tag result: %s", result)
+        passed = result == "passed"
+        logger.info("Checker result: passed=%s", passed)
+        return passed
 
     # 回退：旧格式兼容（取最后一个非空行）
+    logger.debug("XML parse failed, falling back")
     stripped = output.strip()
     if not stripped:
         raise ValueError("Cannot parse checker result from empty output")
@@ -43,15 +52,19 @@ def parse_checker_result(output: str) -> bool:
 
     last_line = lines[-1].lower()
     if last_line == "passed":
+        logger.info("Checker result: passed=%s", True)
         return True
     if last_line == "failed":
+        logger.info("Checker result: passed=%s", False)
         return False
 
     # 尝试在最后几行中查找 passed/failed
     for line in reversed(lines[-5:]):
         line_lower = line.lower()
         if line_lower in ("passed", "failed"):
-            return line_lower == "passed"
+            passed = line_lower == "passed"
+            logger.info("Checker result: passed=%s", passed)
+            return passed
 
     raise ValueError(f"Cannot parse checker result from output: {output[:200]}...")
 
@@ -72,5 +85,8 @@ def extract_checker_explanation(output: str) -> str | None:
     if match:
         end_pos = match.end()
         explanation = output[end_pos:].strip()
-        return explanation if explanation else None
+        if explanation:
+            logger.debug("Extracted explanation")
+            return explanation
+        return None
     return None

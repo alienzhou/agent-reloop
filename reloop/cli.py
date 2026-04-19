@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 
 import typer
+
+logger = logging.getLogger(__name__)
 
 app = typer.Typer(
     name="reloop",
@@ -291,6 +295,7 @@ def init(
       evaluator  - 交互式定义评估标准，生成 task/EVAL_SKILL.md
       mock       - 生成 Mock solution，验证 Evaluator 逻辑
     """
+    logger.info("Initializing project...")
     if target is None:
         # 原有的项目初始化逻辑
         _init_project(language, no_git)
@@ -349,11 +354,14 @@ def run(
     from reloop.core.loop import run_loop
     from reloop.drivers import create_driver
 
+    logger.info("Starting reloop run: max_iterations=%d, fresh=%s", max_iterations, fresh)
+
     project_root = Path.cwd()
 
     # 加载配置
     cfg = load_config(config)
     driver_type = cfg.driver_type
+    logger.debug("Loaded config: workspace=%s, model=%s", project_root, driver_type)
 
     # 读取 INTENT
     if intent_file:
@@ -382,8 +390,10 @@ def run(
     # 创建 Driver
     try:
         executor_driver = create_driver(cfg)
+        logger.debug("Created driver: type=%s", driver_type)
         print(f"✓ 使用 Driver: {driver_type}")
     except Exception as e:
+        logger.error("Failed to create driver: %s", e)
         print(f"❌ 创建 Driver 失败: {e}")
         raise typer.Exit(1)
 
@@ -415,6 +425,7 @@ def run(
             print(f"   Runs: {', '.join(result.run_ids)}")
 
     except Exception as e:
+        logger.error("Run failed: %s\n%s", e, traceback.format_exc())
         print(f"\n❌ 运行失败: {e}")
         raise typer.Exit(1)
 
@@ -434,6 +445,7 @@ def clean(
     """清理运行记录，回滚到初始状态。"""
     from reloop.core.resume import full_cleanup
 
+    logger.info("Cleaning up...")
     project_root = Path.cwd()
 
     # 确认提示
@@ -570,6 +582,14 @@ def status() -> None:
 
 def main() -> None:
     """CLI 入口点。"""
+    from reloop.core.logging import setup_system_logging
+
+    # 初始化日志系统
+    project_root = Path.cwd()
+    log_path = project_root / "logs" / "reloop.log"
+    if log_path.parent.exists():
+        setup_system_logging(log_path)
+
     app()
 
 

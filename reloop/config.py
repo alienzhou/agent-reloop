@@ -5,10 +5,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 class ReloopConfig:
@@ -22,13 +25,17 @@ class ReloopConfig:
         """
         self.config_path = config_path or Path.cwd() / "reloop.yaml"
         self._config: Dict[str, Any] = {}
+        logger.debug("Loading config from %s", self.config_path)
         if self.config_path.exists():
             self._load()
+        else:
+            logger.warning("Config not found, using defaults")
 
     def _load(self) -> None:
         """从文件加载配置。"""
         with open(self.config_path, "r", encoding="utf-8") as f:
             self._config = yaml.safe_load(f) or {}
+        logger.info("Config loaded")
 
     @property
     def driver_type(self) -> str:
@@ -42,7 +49,9 @@ class ReloopConfig:
 
     def get_flick_config(self) -> Dict[str, Any]:
         """获取 FlickDriver 专用配置。"""
-        return self._config.get("driver", {}).get("flick", {})
+        config = self._config.get("driver", {}).get("flick", {})
+        logger.debug("Flick config: %s", config)
+        return config
 
     def get(self, key: str, default: Any = None) -> Any:
         """获取配置值。
@@ -60,9 +69,12 @@ class ReloopConfig:
             if isinstance(value, dict):
                 value = value.get(k)
                 if value is None:
+                    logger.debug("Config get: %s=%s", key, default)
                     return default
             else:
+                logger.debug("Config get: %s=%s", key, default)
                 return default
+        logger.debug("Config get: %s=%s", key, value)
         return value
 
 

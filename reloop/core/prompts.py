@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional, Union
+
+logger = logging.getLogger(__name__)
 
 
 def build_executor_prompt(
@@ -20,6 +23,7 @@ def build_executor_prompt(
         last_eval_report_path: 上一轮评估报告的路径（让执行器自己读取），None 表示首轮
         exec_spec: 执行规范内容
     """
+    logger.debug("Building executor prompt")
     sections = [
         "# Task Intent\n\n" + intent,
         "# Execution Spec\n\n" + exec_spec,
@@ -55,6 +59,7 @@ def build_evaluator_prompt(
     Note:
         调用方需要在执行后检查 report_output_path 文件是否存在。
     """
+    logger.debug("Building evaluator prompt")
     return (
         "# Evaluation Skill\n\n"
         + eval_skill
@@ -89,6 +94,7 @@ def build_checker_prompt(report_path: str, result_path: str) -> str:
         report_path: 评估报告文件的路径（输入），Checker Agent 需要读取此文件
         result_path: 结果输出文件的路径，Checker Agent 需要将判定结果写入此文件
     """
+    logger.debug("Building checker prompt")
     return (
         "# Evaluation Report Location\n\n"
         + f"Report path: `{report_path}`\n\n"

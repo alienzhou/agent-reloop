@@ -48,6 +48,7 @@ def detect_run_status(project_root: Path) -> RunStatus:
     Returns:
         状态枚举值
     """
+    logger.debug(f"Checking run status for {project_root}")
     run_sets_dir = project_root / "run-sets"
 
     # 检查是否有 run-sets 目录
@@ -192,6 +193,7 @@ def get_resumable_run(project_root: Path) -> Optional[tuple[str, RunPhase]]:
     Returns:
         (run_id, phase) 或 None
     """
+    logger.debug(f"Getting resume point for {project_root}")
     run_sets_dir = project_root / "run-sets"
     if not run_sets_dir.exists():
         return None
@@ -274,6 +276,7 @@ def rollback_incomplete_run(project_root: Path, run_id: str) -> None:
         project_root: 项目根目录
         run_id: run ID
     """
+    logger.info(f"Rolling back run: {run_id}")
     run_dir = project_root / "run-sets" / run_id
 
     # 获取该 run 之前的 commit
@@ -375,13 +378,15 @@ def full_cleanup(project_root: Path, keep_logs: bool = False, keep_solution: boo
 
     # 删除所有 runs
     run_sets_dir = project_root / "run-sets"
+    removed_count = 0
     if run_sets_dir.exists():
         for run_dir in run_sets_dir.iterdir():
             if run_dir.is_dir() and run_dir.name.startswith("run-"):
                 shutil.rmtree(run_dir)
-                logger.info(f"Removed {run_dir.name}")
+                removed_count += 1
         # 保持目录存在
         (run_sets_dir / ".gitkeep").write_text("")
+    logger.info(f"Full cleanup: removed {removed_count} runs")
 
     # 清理 solution（可选，暂时保留目录结构）
     if not keep_solution:

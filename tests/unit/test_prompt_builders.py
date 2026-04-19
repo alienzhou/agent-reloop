@@ -97,20 +97,43 @@ class TestBuildCheckerPrompt:
 
     def test_contains_report_path(self):
         report_path = "/path/to/eval-report/report.md"
-        prompt = build_checker_prompt(report_path=report_path)
+        result_path = "/path/to/checker-result/result.md"
+        prompt = build_checker_prompt(report_path=report_path, result_path=result_path)
         assert report_path in prompt
+
+    def test_contains_result_path(self):
+        report_path = "/path/to/eval-report/report.md"
+        result_path = "/path/to/checker-result/result.md"
+        prompt = build_checker_prompt(report_path=report_path, result_path=result_path)
+        assert result_path in prompt
+
+    def test_instructs_to_write_result_file(self):
+        """checker prompt 应引导 Agent 将结果写入文件"""
+        prompt = build_checker_prompt(
+            report_path="/tmp/report.md",
+            result_path="/tmp/result.md"
+        )
+        prompt_lower = prompt.lower()
+        assert "write" in prompt_lower
+        assert "result file" in prompt_lower or "result.md" in prompt_lower
 
     def test_is_task_agnostic(self):
         """checker prompt 本身不应包含特定任务语言"""
-        prompt = build_checker_prompt(report_path="/tmp/report.md")
+        prompt = build_checker_prompt(
+            report_path="/tmp/report.md",
+            result_path="/tmp/result.md"
+        )
         # prompt 模板部分不应提及具体任务（如 "data pipeline"）
-        template_text = prompt.replace("/tmp/report.md", "")
+        template_text = prompt.replace("/tmp/report.md", "").replace("/tmp/result.md", "")
         assert "data pipeline" not in template_text.lower()
         assert "build" not in template_text.lower()
 
     def test_instructs_pass_or_fail(self):
         """checker prompt 应引导 Agent 输出 passed/failed"""
-        prompt = build_checker_prompt(report_path="/tmp/report.md")
+        prompt = build_checker_prompt(
+            report_path="/tmp/report.md",
+            result_path="/tmp/result.md"
+        )
         prompt_lower = prompt.lower()
         assert "passed" in prompt_lower or "pass" in prompt_lower
         assert "failed" in prompt_lower or "fail" in prompt_lower

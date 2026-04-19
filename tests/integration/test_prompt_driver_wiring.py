@@ -39,10 +39,14 @@ class TestPromptDriverWiring:
 
     def test_checker_prompt_passed_to_driver(self):
         driver = MockDriver(responses=["passed"])
-        prompt = build_checker_prompt(report_path="/path/to/report.md")
+        prompt = build_checker_prompt(
+            report_path="/path/to/report.md",
+            result_path="/path/to/result.md"
+        )
         driver.run(prompt=prompt, workdir="/work")
 
         assert "/path/to/report.md" in driver.call_log[0]["prompt"]
+        assert "/path/to/result.md" in driver.call_log[0]["prompt"]
 
     def test_workdir_passed_correctly(self):
         driver = MockDriver(responses=["ok"])

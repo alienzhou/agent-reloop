@@ -217,20 +217,45 @@ class FlickDriver(Driver):
         return response
 
     def _parse_json_response(self, response: str) -> str:
-        """解析 JSON 响应，提取内容字段。
+        """解析 JSON Lines 响应，提取 agent 文本内容。
+
+        flick link prompt --duet-json 输出格式为 JSON Lines (每行一个 JSON 对象)：
+        - {"type": "session_created", ...}
+        - {"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": "..."}}
+        - {"type": "end", ...}
 
         Args:
-            response: 原始响应字符串
+            response: 原始响应字符串（JSON Lines 格式）
 
         Returns:
-            提取的内容或原始响应
+            拼接后的 agent 文本内容
         """
-        try:
-            data = json.loads(response)
-            # 根据实际返回结构提取内容
-            # 结构可能是 {"content": "..."} 或其他格式
-            if isinstance(data, dict):
-                return data.get("content", data.get("message", response))
-        except json.JSONDecodeError:
-            pass  # 非 JSON 输出，直接返回原始文本
-        return response
+        if not response:
+            return response
+
+        text_chunks: list[str] = []
+
+        for line in response.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                data = json.loads(line)
+                if isinstance(data, dict):
+                    # 处理 agent_message_chunk 类型
+                    if data.get("updateType") == "agent_message_chunk":
+                        content = data.get("content", {})
+                        if isinstance(content, dict) and content.get("type") == "text":
+                            text = content.get("text", "")
+                            if text:
+                                text_chunks.append(text)
+            except json.JSONDecodeError:
+                # 非 JSON 行，可能是纯文本（兼容非 JSON 模式）
+                text_chunks.append(line)
+
+        # 如果没有提取到任何文本，返回原始响应
+        if not text_chunks:
+            return response
+
+        return "".join(text_chunks)

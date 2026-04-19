@@ -222,36 +222,117 @@ class TestFlickDriverBlocking:
 
 
 class TestFlickDriverJsonParsing:
-    """测试 JSON 响应解析。"""
+    """测试 JSON Lines 响应解析。"""
 
-    def test_parse_json_with_content_field(self):
-        """解析包含 content 字段的 JSON。"""
+    def test_parse_json_lines_format(self):
+        """测试 JSON Lines 格式解析。"""
         driver = FlickDriver(workspace="test-workspace")
+
+        json_lines_output = '''{"type": "session_created", "threadId": "th_123"}
+{"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": "Hello"}}
+{"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": " World"}}
+{"type": "end", "stopReason": "end_turn"}'''
 
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = '{"content": "Extracted content"}'
+        mock_result.stdout = json_lines_output
 
         with patch("subprocess.run", return_value=mock_result):
             result = driver.run(prompt="test", workdir="/tmp")
 
-        assert result == "Extracted content"
+        assert result == "Hello World"
 
-    def test_parse_json_with_message_field(self):
-        """解析包含 message 字段的 JSON（fallback）。"""
+    def test_parse_json_lines_with_checker_output(self):
+        """测试 Checker 格式的 JSON Lines 输出解析。"""
         driver = FlickDriver(workspace="test-workspace")
+
+        json_lines_output = '''{"type": "session_created", "threadId": "th_123"}
+{"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": "<checker_result>passed</checker_result>"}}
+{"type": "end", "stopReason": "end_turn"}'''
 
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = '{"message": "Message content"}'
+        mock_result.stdout = json_lines_output
 
         with patch("subprocess.run", return_value=mock_result):
             result = driver.run(prompt="test", workdir="/tmp")
 
-        assert result == "Message content"
+        assert "<checker_result>passed</checker_result>" in result
+
+    def test_parse_json_lines_multiline_text(self):
+        """测试多个 text chunk 拼接。"""
+        driver = FlickDriver(workspace="test-workspace")
+
+        json_lines_output = '''{"type": "session_created", "threadId": "th_123"}
+{"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": "Line 1\\n"}}
+{"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": "Line 2\\n"}}
+{"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": "Line 3"}}
+{"type": "end", "stopReason": "end_turn"}'''
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json_lines_output
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = driver.run(prompt="test", workdir="/tmp")
+
+        assert result == "Line 1\nLine 2\nLine 3"
+
+    def test_parse_json_lines_ignores_non_text_updates(self):
+        """测试忽略非 text 类型的 update。"""
+        driver = FlickDriver(workspace="test-workspace")
+
+        json_lines_output = '''{"type": "session_created", "threadId": "th_123"}
+{"type": "update", "updateType": "tool_use", "content": {"type": "tool_call", "name": "read_file"}}
+{"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": "Result"}}
+{"type": "end", "stopReason": "end_turn"}'''
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json_lines_output
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = driver.run(prompt="test", workdir="/tmp")
+
+        assert result == "Result"
+
+    def test_parse_json_lines_empty_text_ignored(self):
+        """测试空 text 被忽略。"""
+        driver = FlickDriver(workspace="test-workspace")
+
+        json_lines_output = '''{"type": "session_created", "threadId": "th_123"}
+{"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": ""}}
+{"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": "Hello"}}
+{"type": "end", "stopReason": "end_turn"}'''
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json_lines_output
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = driver.run(prompt="test", workdir="/tmp")
+
+        assert result == "Hello"
+
+    def test_parse_json_lines_no_text_returns_original(self):
+        """测试无 text chunk 时返回原始响应。"""
+        driver = FlickDriver(workspace="test-workspace")
+
+        json_lines_output = '''{"type": "session_created", "threadId": "th_123"}
+{"type": "end", "stopReason": "end_turn"}'''
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json_lines_output
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = driver.run(prompt="test", workdir="/tmp")
+
+        # 无 text 时返回原始响应
+        assert result == json_lines_output
 
     def test_parse_invalid_json_returns_raw(self):
-        """无效 JSON 返回原始文本。"""
+        """无效 JSON 返回原始文本（作为 text chunk 处理）。"""
         driver = FlickDriver(workspace="test-workspace")
 
         mock_result = MagicMock()
@@ -276,6 +357,25 @@ class TestFlickDriverJsonParsing:
 
         # 原样返回
         assert result == '{"content": "Should not parse"}'
+
+    def test_parse_json_lines_with_blank_lines(self):
+        """测试包含空行的 JSON Lines。"""
+        driver = FlickDriver(workspace="test-workspace")
+
+        json_lines_output = '''{"type": "session_created", "threadId": "th_123"}
+
+{"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": "Hello"}}
+
+{"type": "end", "stopReason": "end_turn"}'''
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json_lines_output
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = driver.run(prompt="test", workdir="/tmp")
+
+        assert result == "Hello"
 
 
 class TestFlickDriverStreamingFileNotFound:

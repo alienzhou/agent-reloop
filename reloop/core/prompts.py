@@ -50,25 +50,29 @@ def build_evaluator_prompt(
     )
 
 
-def build_checker_prompt(report_path: str) -> str:
+def build_checker_prompt(report_path: str, result_path: str) -> str:
     """构建 checker 的 prompt。
 
     Checker 是通用的、任务无关的——只判断评估报告是否表示通过。
-    要求使用 XML 格式输出。
+    要求将结果写入指定文件。
 
     Args:
-        report_path: 评估报告文件的路径，Checker Agent 需要读取此文件
+        report_path: 评估报告文件的路径（输入），Checker Agent 需要读取此文件
+        result_path: 结果输出文件的路径，Checker Agent 需要将判定结果写入此文件
     """
     return (
         "# Evaluation Report Location\n\n"
         + f"Report path: `{report_path}`\n\n"
+        + "---\n\n"
+        + "# Result Output Location\n\n"
+        + f"**You MUST write your result to:** `{result_path}`\n\n"
         + "---\n\n"
         + "# Instructions\n\n"
         + "You are a **task-agnostic binary classifier**. \n\n"
         + "Your job:\n"
         + "1. Read the evaluation report from the path above\n"
         + "2. Determine if it indicates overall success or failure\n"
-        + "3. Output your decision in XML format\n\n"
+        + "3. **Write your decision to the result file**\n\n"
         + "You do NOT need to:\n"
         + "- Understand the specific task\n"
         + "- Evaluate the solution yourself\n"
@@ -77,7 +81,7 @@ def build_checker_prompt(report_path: str) -> str:
         + "- Look for explicit conclusion signals: \"Overall:\", \"Result:\", \"Final:\", \"Verdict:\"\n"
         + "- Look for pass/fail keywords in the conclusion section\n"
         + "- If unclear, default to \"failed\" (conservative)\n\n"
-        + "Output format (mandatory):\n"
+        + "**Result file format (mandatory):**\n"
         + "```\n"
         + "<checker_result>passed</checker_result>\n\n"
         + "[Optional: Brief explanation]\n"
@@ -90,5 +94,5 @@ def build_checker_prompt(report_path: str) -> str:
         + "The XML tag must be:\n"
         + "- On its own line\n"
         + "- Exactly as shown (lowercase, no attributes)\n"
-        + "- The ONLY required output\n"
+        + "- **Written to the result file, NOT just stdout**\n"
     )

@@ -38,6 +38,13 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ITERATIONS = 10
 
+
+class CheckerResultNotFoundError(Exception):
+    """Checker 未将结果写入指定文件。"""
+
+    pass
+
+
 # 框架内置的通用执行规范
 _EXEC_SPEC_TEMPLATE = """## Execution Rules
 
@@ -265,7 +272,10 @@ def _run_loop_with_live_ui(
             last_eval_result = eval_output
 
             # ④ Checker
-            checker_prompt = build_checker_prompt(str(report_path))
+            checker_result_path = run_dir / "checker-result" / "result.md"
+            checker_result_path.parent.mkdir(parents=True, exist_ok=True)
+
+            checker_prompt = build_checker_prompt(str(report_path), str(checker_result_path))
             logger.info("Running checker...")
 
             _log_prompt(log_paths["prompt"], "CHECKER", checker_prompt)
@@ -285,8 +295,14 @@ def _run_loop_with_live_ui(
             )
             checker_stream.finalize()
 
-            passed = parse_checker_result(checker_output)
-            explanation = extract_checker_explanation(checker_output)
+            # 从文件读取 checker 结果
+            if not checker_result_path.exists():
+                raise CheckerResultNotFoundError(
+                    f"Checker did not write result to {checker_result_path}"
+                )
+            checker_result = checker_result_path.read_text()
+            passed = parse_checker_result(checker_result)
+            explanation = extract_checker_explanation(checker_result)
 
             ui.complete_stage("Checker", success=passed)
             ui.end_round(passed)
@@ -296,7 +312,7 @@ def _run_loop_with_live_ui(
                 command=["checker", "agent"],
                 workdir=workdir,
                 prompt=checker_prompt,
-                output=checker_output,
+                output=checker_result,
                 exit_code=0,
                 duration=0.0,
             )
@@ -438,7 +454,10 @@ def _run_loop_classic(
         last_eval_result = eval_output
 
         # ④ Checker
-        checker_prompt = build_checker_prompt(str(report_path))
+        checker_result_path = run_dir / "checker-result" / "result.md"
+        checker_result_path.parent.mkdir(parents=True, exist_ok=True)
+
+        checker_prompt = build_checker_prompt(str(report_path), str(checker_result_path))
         logger.info("Running checker...")
 
         _log_prompt(log_paths["prompt"], "CHECKER", checker_prompt)
@@ -455,15 +474,21 @@ def _run_loop_classic(
         )
         checker_stream.finalize()
 
-        passed = parse_checker_result(checker_output)
-        explanation = extract_checker_explanation(checker_output)
+        # 从文件读取 checker 结果
+        if not checker_result_path.exists():
+            raise CheckerResultNotFoundError(
+                f"Checker did not write result to {checker_result_path}"
+            )
+        checker_result = checker_result_path.read_text()
+        passed = parse_checker_result(checker_result)
+        explanation = extract_checker_explanation(checker_result)
 
         log_driver_call(
             log_path=log_paths["driver"],
             command=["checker", "agent"],
             workdir=workdir,
             prompt=checker_prompt,
-            output=checker_output,
+            output=checker_result,
             exit_code=0,
             duration=0.0,
         )

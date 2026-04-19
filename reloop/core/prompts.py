@@ -41,10 +41,19 @@ def build_executor_prompt(
 def build_evaluator_prompt(
     solution_dir: str,
     eval_skill: str,
+    report_output_path: str,
 ) -> str:
     """构建 evaluator 的 prompt。
 
-    将 solution 路径和 evaluator Skill 内容内联组装。
+    将 solution 路径、evaluator Skill 内容和报告输出路径组装。
+    
+    Args:
+        solution_dir: solution 目录路径
+        eval_skill: 评估 Skill 内容
+        report_output_path: 评估报告输出文件路径，Evaluator 必须将报告写入此文件
+        
+    Note:
+        调用方需要在执行后检查 report_output_path 文件是否存在。
     """
     return (
         "# Evaluation Skill\n\n"
@@ -52,9 +61,21 @@ def build_evaluator_prompt(
         + "\n\n---\n\n"
         + "# Solution to Evaluate\n\n"
         + f"Solution directory: {solution_dir}\n\n"
+        + "---\n\n"
+        + "# Report Output Location\n\n"
+        + f"**You MUST write the final evaluation report to:** `{report_output_path}`\n\n"
+        + "**IMPORTANT:**\n"
+        + "- The report file MUST be created by you using file write tools\n"
+        + "- Do NOT just print the report to stdout\n"
+        + "- The external system will read the report from this file\n"
+        + "- If you fail to write the file, the evaluation will be considered failed\n\n"
+        + "---\n\n"
+        + "# Instructions\n\n"
         + "Evaluate the solution according to the skill above. "
-        + "Run L0, L1, L2 checks in order with short-circuit logic. "
-        + "Write the evaluation report."
+        + "Run L0, L1, L2 checks in order with short-circuit logic.\n\n"
+        + f"**CRITICAL: You MUST write the complete evaluation report to `{report_output_path}` using file write tools.** "
+        + "Do NOT just output the report to stdout - the file MUST exist after your execution. "
+        + "**Written to the report file, NOT just stdout.**"
     )
 
 

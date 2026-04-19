@@ -9,6 +9,7 @@ import pytest
 
 from reloop.core.loop import (
     CheckerResultNotFoundError,
+    EvaluatorReportNotFoundError,
     LoopResult,
     MaxIterationsExceededError,
     run_loop,
@@ -52,6 +53,29 @@ def _extract_result_path_from_prompt(prompt: str) -> Optional[str]:
     return None
 
 
+def _extract_report_path_from_prompt(prompt: str) -> Optional[str]:
+    """从 evaluator prompt 中提取 report_output_path。"""
+    # 格式: **You MUST write the final evaluation report to:** `{report_output_path}`
+    match = re.search(
+        r"\*\*You MUST write the final evaluation report to:\*\*\s*`([^`]+)`",
+        prompt
+    )
+    if match:
+        return match.group(1)
+    return None
+
+
+def _make_evaluator_callback(report_content: str):
+    """创建 evaluator 回调函数，将报告写入指定路径。"""
+    def callback(prompt: str, workdir: str) -> None:
+        report_path = _extract_report_path_from_prompt(prompt)
+        if report_path:
+            path = Path(report_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(report_content)
+    return callback
+
+
 def _make_checker_callback(result: str):
     """创建 checker 回调函数，将结果写入指定路径。"""
     def callback(prompt: str, workdir: str) -> None:
@@ -76,14 +100,17 @@ class TestSingleRoundPass:
 
     def test_loop_exits_after_one_round(self, tmp_path):
         _init_git_repo(tmp_path)
-        # executor 和 evaluator 使用普通 MockDriver
-        exec_eval_driver = MockDriver(responses=[
-            "executor output",                         # executor
-            "L0: PASS\nL1: PASS\nL2: PASS\nPASSED",  # evaluator
-        ])
+        # executor 使用普通 MockDriver
+        executor_driver = MockDriver(responses=["executor output"])
+        # evaluator 使用 CallbackMockDriver，写入报告文件
+        eval_content = "L0: PASS\nL1: PASS\nL2: PASS\nPASSED"
+        evaluator_driver = CallbackMockDriver(
+            responses=[eval_content],
+            callbacks=[_make_evaluator_callback(eval_content)],
+        )
         # checker 使用 CallbackMockDriver，写入结果文件
         checker_driver = CallbackMockDriver(
-            responses=["Checking..."],  # stdout 返回值不重要
+            responses=["Checking..."],
             callbacks=[_make_checker_callback("passed")],
         )
 
@@ -91,7 +118,8 @@ class TestSingleRoundPass:
             project_root=tmp_path,
             intent="Build hello.txt",
             eval_skill="Check file exists",
-            executor_driver=exec_eval_driver,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             checker_driver=checker_driver,
         )
 
@@ -100,7 +128,12 @@ class TestSingleRoundPass:
 
     def test_only_run_001_exists(self, tmp_path):
         _init_git_repo(tmp_path)
-        exec_eval_driver = MockDriver(responses=["exec", "eval"])
+        executor_driver = MockDriver(responses=["exec"])
+        eval_content = "eval"
+        evaluator_driver = CallbackMockDriver(
+            responses=[eval_content],
+            callbacks=[_make_evaluator_callback(eval_content)],
+        )
         checker_driver = CallbackMockDriver(
             responses=["ok"],
             callbacks=[_make_checker_callback("passed")],
@@ -110,7 +143,8 @@ class TestSingleRoundPass:
             project_root=tmp_path,
             intent="task",
             eval_skill="skill",
-            executor_driver=exec_eval_driver,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             checker_driver=checker_driver,
         )
 
@@ -123,12 +157,16 @@ class TestMultiRoundConvergence:
 
     def test_two_rounds_to_pass(self, tmp_path):
         _init_git_repo(tmp_path)
-        exec_eval_driver = MockDriver(responses=[
-            # Round 1: fail
-            "executor v1", "L1: FAIL\ncount mismatch",
-            # Round 2: pass
-            "executor v2", "L0: PASS\nL1: PASS\nL2: PASS",
-        ])
+        executor_driver = MockDriver(responses=["executor v1", "executor v2"])
+        eval_content_r1 = "L1: FAIL\ncount mismatch"
+        eval_content_r2 = "L0: PASS\nL1: PASS\nL2: PASS"
+        evaluator_driver = CallbackMockDriver(
+            responses=[eval_content_r1, eval_content_r2],
+            callbacks=[
+                _make_evaluator_callback(eval_content_r1),
+                _make_evaluator_callback(eval_content_r2),
+            ],
+        )
         checker_driver = CallbackMockDriver(
             responses=["checking r1", "checking r2"],
             callbacks=[
@@ -141,7 +179,8 @@ class TestMultiRoundConvergence:
             project_root=tmp_path,
             intent="task",
             eval_skill="skill",
-            executor_driver=exec_eval_driver,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             checker_driver=checker_driver,
         )
 
@@ -152,10 +191,15 @@ class TestMultiRoundConvergence:
     def test_round2_executor_prompt_contains_round1_eval(self, tmp_path):
         _init_git_repo(tmp_path)
         eval_report_r1 = "L1: FAIL\ncount mismatch: expected 10, got 5"
-        exec_eval_driver = MockDriver(responses=[
-            "exec v1", eval_report_r1,
-            "exec v2", "all pass",
-        ])
+        eval_report_r2 = "all pass"
+        executor_driver = MockDriver(responses=["exec v1", "exec v2"])
+        evaluator_driver = CallbackMockDriver(
+            responses=[eval_report_r1, eval_report_r2],
+            callbacks=[
+                _make_evaluator_callback(eval_report_r1),
+                _make_evaluator_callback(eval_report_r2),
+            ],
+        )
         checker_driver = CallbackMockDriver(
             responses=["r1", "r2"],
             callbacks=[
@@ -168,20 +212,32 @@ class TestMultiRoundConvergence:
             project_root=tmp_path,
             intent="task",
             eval_skill="skill",
-            executor_driver=exec_eval_driver,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             checker_driver=checker_driver,
         )
 
-        # 第 3 次调用是 round 2 的 executor（索引 2，因为 checker 用了单独的 driver）
-        round2_executor_prompt = exec_eval_driver.call_log[2]["prompt"]
-        assert "count mismatch" in round2_executor_prompt
+        # 第 2 次调用是 round 2 的 executor（索引 1，executor 单独的 driver）
+        round2_executor_prompt = executor_driver.call_log[1]["prompt"]
+        # 现在 executor prompt 引用了 round 1 的评估报告路径，而非内联内容
+        # 验证 prompt 包含对 run-001 评估报告的引用
+        assert "run-001" in round2_executor_prompt
+        assert "eval-report" in round2_executor_prompt
+        # 验证 round 1 报告文件确实包含预期内容
+        report_r1 = tmp_path / "run-sets" / "run-001" / "eval-report" / "report.md"
+        assert report_r1.exists()
+        assert "count mismatch" in report_r1.read_text()
 
     def test_both_run_dirs_exist(self, tmp_path):
         _init_git_repo(tmp_path)
-        exec_eval_driver = MockDriver(responses=[
-            "e1", "eval1",
-            "e2", "eval2",
-        ])
+        executor_driver = MockDriver(responses=["e1", "e2"])
+        evaluator_driver = CallbackMockDriver(
+            responses=["eval1", "eval2"],
+            callbacks=[
+                _make_evaluator_callback("eval1"),
+                _make_evaluator_callback("eval2"),
+            ],
+        )
         checker_driver = CallbackMockDriver(
             responses=["r1", "r2"],
             callbacks=[
@@ -194,7 +250,8 @@ class TestMultiRoundConvergence:
             project_root=tmp_path,
             intent="task",
             eval_skill="skill",
-            executor_driver=exec_eval_driver,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             checker_driver=checker_driver,
         )
 
@@ -207,7 +264,12 @@ class TestFirstRoundNoEval:
 
     def test_first_round_executor_no_eval_section(self, tmp_path):
         _init_git_repo(tmp_path)
-        exec_eval_driver = MockDriver(responses=["exec", "eval"])
+        executor_driver = MockDriver(responses=["exec"])
+        eval_content = "eval"
+        evaluator_driver = CallbackMockDriver(
+            responses=[eval_content],
+            callbacks=[_make_evaluator_callback(eval_content)],
+        )
         checker_driver = CallbackMockDriver(
             responses=["ok"],
             callbacks=[_make_checker_callback("passed")],
@@ -217,11 +279,12 @@ class TestFirstRoundNoEval:
             project_root=tmp_path,
             intent="task",
             eval_skill="skill",
-            executor_driver=exec_eval_driver,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             checker_driver=checker_driver,
         )
 
-        first_executor_prompt = exec_eval_driver.call_log[0]["prompt"]
+        first_executor_prompt = executor_driver.call_log[0]["prompt"]
         assert "previous evaluation" not in first_executor_prompt.lower()
 
 
@@ -230,12 +293,15 @@ class TestMaxIterationGuard:
 
     def test_raises_after_max_iterations(self, tmp_path):
         _init_git_repo(tmp_path)
-        # 3 轮 × 2 次调用（exec, eval）= 6 个响应
-        exec_eval_driver = MockDriver(responses=[
-            "exec", "eval",
-            "exec", "eval",
-            "exec", "eval",
-        ])
+        executor_driver = MockDriver(responses=["exec", "exec", "exec"])
+        evaluator_driver = CallbackMockDriver(
+            responses=["eval", "eval", "eval"],
+            callbacks=[
+                _make_evaluator_callback("eval"),
+                _make_evaluator_callback("eval"),
+                _make_evaluator_callback("eval"),
+            ],
+        )
         # 3 轮全部 fail
         checker_driver = CallbackMockDriver(
             responses=["r1", "r2", "r3"],
@@ -251,7 +317,8 @@ class TestMaxIterationGuard:
                 project_root=tmp_path,
                 intent="task",
                 eval_skill="skill",
-                executor_driver=exec_eval_driver,
+                executor_driver=executor_driver,
+                evaluator_driver=evaluator_driver,
                 checker_driver=checker_driver,
                 max_iterations=3,
             )
@@ -259,8 +326,11 @@ class TestMaxIterationGuard:
     def test_does_not_run_forever(self, tmp_path):
         """即使 checker 一直返回 failed，也在 max_iterations 后停止"""
         _init_git_repo(tmp_path)
-        exec_eval_responses = ["exec", "eval"] * 5
-        exec_eval_driver = MockDriver(responses=exec_eval_responses)
+        executor_driver = MockDriver(responses=["exec"] * 5)
+        evaluator_driver = CallbackMockDriver(
+            responses=["eval"] * 5,
+            callbacks=[_make_evaluator_callback("eval")] * 5,
+        )
         checker_driver = CallbackMockDriver(
             responses=["r"] * 5,
             callbacks=[_make_checker_callback("failed")] * 5,
@@ -271,7 +341,8 @@ class TestMaxIterationGuard:
                 project_root=tmp_path,
                 intent="task",
                 eval_skill="skill",
-                executor_driver=exec_eval_driver,
+                executor_driver=executor_driver,
+                evaluator_driver=evaluator_driver,
                 checker_driver=checker_driver,
                 max_iterations=5,
             )
@@ -282,10 +353,14 @@ class TestDirectoryLayoutAfterRun:
 
     def test_run_dirs_have_correct_subdirs(self, tmp_path):
         _init_git_repo(tmp_path)
-        exec_eval_driver = MockDriver(responses=[
-            "e1", "eval1",
-            "e2", "eval2",
-        ])
+        executor_driver = MockDriver(responses=["e1", "e2"])
+        evaluator_driver = CallbackMockDriver(
+            responses=["eval1", "eval2"],
+            callbacks=[
+                _make_evaluator_callback("eval1"),
+                _make_evaluator_callback("eval2"),
+            ],
+        )
         checker_driver = CallbackMockDriver(
             responses=["r1", "r2"],
             callbacks=[
@@ -298,7 +373,8 @@ class TestDirectoryLayoutAfterRun:
             project_root=tmp_path,
             intent="task",
             eval_skill="skill",
-            executor_driver=exec_eval_driver,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             checker_driver=checker_driver,
         )
 
@@ -310,7 +386,12 @@ class TestDirectoryLayoutAfterRun:
 
     def test_task_solution_exists(self, tmp_path):
         _init_git_repo(tmp_path)
-        exec_eval_driver = MockDriver(responses=["exec", "eval"])
+        executor_driver = MockDriver(responses=["exec"])
+        eval_content = "eval"
+        evaluator_driver = CallbackMockDriver(
+            responses=[eval_content],
+            callbacks=[_make_evaluator_callback(eval_content)],
+        )
         checker_driver = CallbackMockDriver(
             responses=["ok"],
             callbacks=[_make_checker_callback("passed")],
@@ -320,7 +401,8 @@ class TestDirectoryLayoutAfterRun:
             project_root=tmp_path,
             intent="task",
             eval_skill="skill",
-            executor_driver=exec_eval_driver,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             checker_driver=checker_driver,
         )
 
@@ -329,7 +411,11 @@ class TestDirectoryLayoutAfterRun:
     def test_eval_report_saved(self, tmp_path):
         _init_git_repo(tmp_path)
         eval_output = "L0: PASS\nL1: PASS\nOverall: PASSED"
-        exec_eval_driver = MockDriver(responses=["exec", eval_output])
+        executor_driver = MockDriver(responses=["exec"])
+        evaluator_driver = CallbackMockDriver(
+            responses=[eval_output],
+            callbacks=[_make_evaluator_callback(eval_output)],
+        )
         checker_driver = CallbackMockDriver(
             responses=["ok"],
             callbacks=[_make_checker_callback("passed")],
@@ -339,7 +425,8 @@ class TestDirectoryLayoutAfterRun:
             project_root=tmp_path,
             intent="task",
             eval_skill="skill",
-            executor_driver=exec_eval_driver,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             checker_driver=checker_driver,
         )
 
@@ -350,7 +437,12 @@ class TestDirectoryLayoutAfterRun:
     def test_checker_result_saved(self, tmp_path):
         """验证 checker 结果文件被保存"""
         _init_git_repo(tmp_path)
-        exec_eval_driver = MockDriver(responses=["exec", "eval"])
+        executor_driver = MockDriver(responses=["exec"])
+        eval_content = "eval"
+        evaluator_driver = CallbackMockDriver(
+            responses=[eval_content],
+            callbacks=[_make_evaluator_callback(eval_content)],
+        )
         checker_driver = CallbackMockDriver(
             responses=["ok"],
             callbacks=[_make_checker_callback("passed")],
@@ -360,7 +452,8 @@ class TestDirectoryLayoutAfterRun:
             project_root=tmp_path,
             intent="task",
             eval_skill="skill",
-            executor_driver=exec_eval_driver,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             checker_driver=checker_driver,
         )
 
@@ -370,10 +463,14 @@ class TestDirectoryLayoutAfterRun:
 
     def test_git_commits_exist(self, tmp_path):
         _init_git_repo(tmp_path)
-        exec_eval_driver = MockDriver(responses=[
-            "e1", "eval1",
-            "e2", "eval2",
-        ])
+        executor_driver = MockDriver(responses=["e1", "e2"])
+        evaluator_driver = CallbackMockDriver(
+            responses=["eval1", "eval2"],
+            callbacks=[
+                _make_evaluator_callback("eval1"),
+                _make_evaluator_callback("eval2"),
+            ],
+        )
         checker_driver = CallbackMockDriver(
             responses=["r1", "r2"],
             callbacks=[
@@ -386,7 +483,8 @@ class TestDirectoryLayoutAfterRun:
             project_root=tmp_path,
             intent="task",
             eval_skill="skill",
-            executor_driver=exec_eval_driver,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             checker_driver=checker_driver,
         )
 
@@ -403,7 +501,11 @@ class TestDifferentDrivers:
     def test_executor_and_evaluator_separate_drivers(self, tmp_path):
         _init_git_repo(tmp_path)
         executor_driver = MockDriver(responses=["executor output"])
-        evaluator_driver = MockDriver(responses=["eval report"])
+        eval_content = "eval report"
+        evaluator_driver = CallbackMockDriver(
+            responses=[eval_content],
+            callbacks=[_make_evaluator_callback(eval_content)],
+        )
         checker_driver = CallbackMockDriver(
             responses=["checking"],
             callbacks=[_make_checker_callback("passed")],
@@ -432,9 +534,20 @@ class TestDifferentDrivers:
         assert "Result Output Location" in checker_driver.call_log[0]["prompt"]
 
     def test_evaluator_defaults_to_executor_driver(self, tmp_path):
-        """不指定 evaluator_driver 时，复用 executor_driver"""
+        """不指定 evaluator_driver 时，复用 executor_driver。
+        
+        注意：即使复用 executor_driver，evaluator 也需要写入报告文件。
+        使用 CallbackMockDriver 来处理这两种调用。
+        """
         _init_git_repo(tmp_path)
-        exec_eval_driver = MockDriver(responses=["exec", "eval"])
+        eval_content = "eval"
+        exec_eval_driver = CallbackMockDriver(
+            responses=["exec", eval_content],
+            callbacks=[
+                None,  # executor 不需要写文件
+                _make_evaluator_callback(eval_content),  # evaluator 需要写文件
+            ],
+        )
         checker_driver = CallbackMockDriver(
             responses=["ok"],
             callbacks=[_make_checker_callback("passed")],
@@ -456,10 +569,14 @@ class TestLoopResult:
 
     def test_result_contains_run_ids(self, tmp_path):
         _init_git_repo(tmp_path)
-        exec_eval_driver = MockDriver(responses=[
-            "e1", "eval1",
-            "e2", "eval2",
-        ])
+        executor_driver = MockDriver(responses=["e1", "e2"])
+        evaluator_driver = CallbackMockDriver(
+            responses=["eval1", "eval2"],
+            callbacks=[
+                _make_evaluator_callback("eval1"),
+                _make_evaluator_callback("eval2"),
+            ],
+        )
         checker_driver = CallbackMockDriver(
             responses=["r1", "r2"],
             callbacks=[
@@ -472,7 +589,8 @@ class TestLoopResult:
             project_root=tmp_path,
             intent="task",
             eval_skill="skill",
-            executor_driver=exec_eval_driver,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             checker_driver=checker_driver,
         )
 
@@ -480,7 +598,12 @@ class TestLoopResult:
 
     def test_result_contains_last_eval_report(self, tmp_path):
         _init_git_repo(tmp_path)
-        exec_eval_driver = MockDriver(responses=["exec", "final eval"])
+        executor_driver = MockDriver(responses=["exec"])
+        eval_content = "final eval"
+        evaluator_driver = CallbackMockDriver(
+            responses=[eval_content],
+            callbacks=[_make_evaluator_callback(eval_content)],
+        )
         checker_driver = CallbackMockDriver(
             responses=["ok"],
             callbacks=[_make_checker_callback("passed")],
@@ -490,11 +613,12 @@ class TestLoopResult:
             project_root=tmp_path,
             intent="task",
             eval_skill="skill",
-            executor_driver=exec_eval_driver,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             checker_driver=checker_driver,
         )
 
-        assert result.last_eval_report == "final eval"
+        assert result.last_eval_report == eval_content
 
 
 class TestCheckerResultNotFound:
@@ -503,7 +627,12 @@ class TestCheckerResultNotFound:
     def test_raises_when_checker_does_not_write_result(self, tmp_path):
         """当 Checker 没有写入结果文件时，应抛出 CheckerResultNotFoundError"""
         _init_git_repo(tmp_path)
-        exec_eval_driver = MockDriver(responses=["exec", "eval"])
+        executor_driver = MockDriver(responses=["exec"])
+        eval_content = "eval"
+        evaluator_driver = CallbackMockDriver(
+            responses=[eval_content],
+            callbacks=[_make_evaluator_callback(eval_content)],
+        )
         # 使用普通 MockDriver，不会写入文件
         checker_driver = MockDriver(responses=["some output but no file"])
 
@@ -512,6 +641,52 @@ class TestCheckerResultNotFound:
                 project_root=tmp_path,
                 intent="task",
                 eval_skill="skill",
-                executor_driver=exec_eval_driver,
+                executor_driver=executor_driver,
+                evaluator_driver=evaluator_driver,
+                checker_driver=checker_driver,
+            )
+
+
+class TestEvaluatorReportNotFound:
+    """3.8 Evaluator 未写入报告文件时的错误处理"""
+
+    def test_raises_when_evaluator_does_not_write_report(self, tmp_path):
+        """当 Evaluator 没有写入报告文件时，应抛出 EvaluatorReportNotFoundError"""
+        _init_git_repo(tmp_path)
+        executor_driver = MockDriver(responses=["exec output"])
+        # 使用普通 MockDriver，不会写入文件
+        evaluator_driver = MockDriver(responses=["some output but no file"])
+        # checker 不会被调用（因为 evaluator 阶段就会失败）
+        checker_driver = MockDriver(responses=["should not reach"])
+
+        with pytest.raises(EvaluatorReportNotFoundError, match="did not write report"):
+            run_loop(
+                project_root=tmp_path,
+                intent="task",
+                eval_skill="skill",
+                executor_driver=executor_driver,
+                evaluator_driver=evaluator_driver,
+                checker_driver=checker_driver,
+            )
+
+    def test_executor_succeeds_but_evaluator_fails_to_write(self, tmp_path):
+        """Executor 成功执行，但 Evaluator 未写入报告文件"""
+        _init_git_repo(tmp_path)
+        # 分开 executor 和 evaluator driver
+        executor_driver = MockDriver(responses=["executor completed successfully"])
+        # evaluator 返回输出但不写文件
+        evaluator_driver = MockDriver(responses=["L0: PASS\nL1: PASS\nL2: PASS"])
+        checker_driver = CallbackMockDriver(
+            responses=["ok"],
+            callbacks=[_make_checker_callback("passed")],
+        )
+
+        with pytest.raises(EvaluatorReportNotFoundError):
+            run_loop(
+                project_root=tmp_path,
+                intent="task",
+                eval_skill="skill",
+                executor_driver=executor_driver,
+                evaluator_driver=evaluator_driver,
                 checker_driver=checker_driver,
             )

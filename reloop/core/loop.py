@@ -22,7 +22,6 @@ from reloop.core.prompts import (
     build_evaluator_prompt,
     build_executor_prompt,
 )
-from reloop.core.report_sanitizer import sanitize_eval_report
 from reloop.core.timing import (
     end_session,
     format_elapsed_verbose,
@@ -52,6 +51,12 @@ DEFAULT_MAX_ITERATIONS = 10
 
 class CheckerResultNotFoundError(Exception):
     """Checker 未将结果写入指定文件。"""
+
+    pass
+
+
+class EvaluatorReportNotFoundError(Exception):
+    """Evaluator 未将评估报告写入指定文件。"""
 
     pass
 
@@ -330,7 +335,16 @@ def _run_loop_with_live_ui(
                 # last_eval_result 已在前面设置
             else:
                 solution_dir = str(project_root / "task" / "solution")
-                evaluator_prompt = build_evaluator_prompt(solution_dir, eval_skill)
+                
+                # 预先计算报告路径并创建目录，让 Evaluator 直接写入
+                report_path = run_dir / "eval-report" / "report.md"
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                evaluator_prompt = build_evaluator_prompt(
+                    solution_dir, 
+                    eval_skill,
+                    str(report_path),
+                )
                 logger.info("Running evaluator...")
 
                 _log_prompt(log_paths["prompt"], "EVALUATOR", evaluator_prompt)
@@ -361,12 +375,11 @@ def _run_loop_with_live_ui(
                     duration=0.0,
                 )
 
-                # 保存评估报告（清理敏感信息后）
-                report_path = run_dir / "eval-report" / "report.md"
-                report_path.parent.mkdir(parents=True, exist_ok=True)
-                # 清理评估报告中的敏感信息，避免泄露评估脚本和规则给执行器
-                sanitized_report = sanitize_eval_report(eval_output)
-                report_path.write_text(sanitized_report)
+                # 检查 Evaluator 是否已将报告写入指定文件
+                if not report_path.exists():
+                    raise EvaluatorReportNotFoundError(
+                        f"Evaluator did not write report to {report_path}"
+                    )
                 # 记录报告路径，供下一轮执行器使用
                 last_eval_report_path = report_path
 
@@ -604,7 +617,16 @@ def _run_loop_classic(
             print(f"[{time.strftime('%H:%M:%S')}] ⏭️ Evaluator skipped (resume mode)")
         else:
             solution_dir = str(project_root / "task" / "solution")
-            evaluator_prompt = build_evaluator_prompt(solution_dir, eval_skill)
+            
+            # 预先计算报告路径并创建目录，让 Evaluator 直接写入
+            report_path = run_dir / "eval-report" / "report.md"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            evaluator_prompt = build_evaluator_prompt(
+                solution_dir, 
+                eval_skill,
+                str(report_path),
+            )
             logger.info("Running evaluator...")
 
             _log_prompt(log_paths["prompt"], "EVALUATOR", evaluator_prompt)
@@ -637,12 +659,11 @@ def _run_loop_classic(
                 duration=0.0,
             )
 
-            # 保存评估报告（清理敏感信息后）
-            report_path = run_dir / "eval-report" / "report.md"
-            report_path.parent.mkdir(parents=True, exist_ok=True)
-            # 清理评估报告中的敏感信息，避免泄露评估脚本和规则给执行器
-            sanitized_report = sanitize_eval_report(eval_output)
-            report_path.write_text(sanitized_report)
+            # 检查 Evaluator 是否已将报告写入指定文件
+            if not report_path.exists():
+                raise EvaluatorReportNotFoundError(
+                    f"Evaluator did not write report to {report_path}"
+                )
             # 记录报告路径，供下一轮执行器使用
             last_eval_report_path = report_path
 

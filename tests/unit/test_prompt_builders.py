@@ -76,6 +76,7 @@ class TestBuildEvaluatorPrompt:
         prompt = build_evaluator_prompt(
             solution_dir="task/solution",
             eval_skill="Check output format",
+            report_output_path="/tmp/eval-report/report.md",
         )
         assert "task/solution" in prompt
 
@@ -84,6 +85,7 @@ class TestBuildEvaluatorPrompt:
         prompt = build_evaluator_prompt(
             solution_dir="task/solution",
             eval_skill=skill_body,
+            report_output_path="/tmp/eval-report/report.md",
         )
         assert skill_body in prompt
 
@@ -91,8 +93,30 @@ class TestBuildEvaluatorPrompt:
         prompt = build_evaluator_prompt(
             solution_dir="path",
             eval_skill="skill content",
+            report_output_path="/tmp/eval-report/report.md",
         )
         assert "--skill" not in prompt
+
+    def test_contains_report_output_path(self):
+        """evaluator prompt 应包含报告输出路径"""
+        report_path = "/path/to/eval-report/report.md"
+        prompt = build_evaluator_prompt(
+            solution_dir="task/solution",
+            eval_skill="skill content",
+            report_output_path=report_path,
+        )
+        assert report_path in prompt
+
+    def test_instructs_to_write_report_file(self):
+        """evaluator prompt 应引导 Agent 将报告写入文件"""
+        prompt = build_evaluator_prompt(
+            solution_dir="task/solution",
+            eval_skill="skill content",
+            report_output_path="/tmp/report.md",
+        )
+        prompt_lower = prompt.lower()
+        assert "write" in prompt_lower
+        assert "report" in prompt_lower
 
 
 class TestBuildCheckerPrompt:

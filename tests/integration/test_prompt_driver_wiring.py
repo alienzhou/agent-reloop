@@ -17,7 +17,7 @@ class TestPromptDriverWiring:
         driver = MockDriver(responses=["ok"])
         prompt = build_executor_prompt(
             intent="Build pipeline",
-            last_eval_result=None,
+            last_eval_report_path=None,
             exec_spec="artifacts go to run-sets/",
         )
         driver.run(prompt=prompt, workdir="/tmp")
@@ -31,11 +31,13 @@ class TestPromptDriverWiring:
         prompt = build_evaluator_prompt(
             solution_dir="task/solution",
             eval_skill="Check file count >= 10",
+            report_output_path="/path/to/eval-report/report.md",
         )
         driver.run(prompt=prompt, workdir="/work")
 
         assert "task/solution" in driver.call_log[0]["prompt"]
         assert "Check file count >= 10" in driver.call_log[0]["prompt"]
+        assert "/path/to/eval-report/report.md" in driver.call_log[0]["prompt"]
 
     def test_checker_prompt_passed_to_driver(self):
         driver = MockDriver(responses=["passed"])
@@ -59,6 +61,7 @@ class TestPromptDriverWiring:
         prompt = build_evaluator_prompt(
             solution_dir="task/solution",
             eval_skill=skill,
+            report_output_path="/path/to/eval-report/report.md",
         )
         assert "## L0" in prompt
         assert "## L1" in prompt

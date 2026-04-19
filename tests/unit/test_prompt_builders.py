@@ -95,23 +95,22 @@ class TestBuildEvaluatorPrompt:
 class TestBuildCheckerPrompt:
     """checker prompt 构建逻辑"""
 
-    def test_contains_eval_report(self):
-        report = "L0: PASS\nL1: PASS\nL2: PASS\nOverall: PASSED"
-        prompt = build_checker_prompt(eval_report=report)
-        assert report in prompt
+    def test_contains_report_path(self):
+        report_path = "/path/to/eval-report/report.md"
+        prompt = build_checker_prompt(report_path=report_path)
+        assert report_path in prompt
 
     def test_is_task_agnostic(self):
         """checker prompt 本身不应包含特定任务语言"""
-        prompt = build_checker_prompt(eval_report="some report")
+        prompt = build_checker_prompt(report_path="/tmp/report.md")
         # prompt 模板部分不应提及具体任务（如 "data pipeline"）
-        # 只检查模板部分——eval_report 之外的文本
-        template_text = prompt.replace("some report", "")
+        template_text = prompt.replace("/tmp/report.md", "")
         assert "data pipeline" not in template_text.lower()
         assert "build" not in template_text.lower()
 
     def test_instructs_pass_or_fail(self):
         """checker prompt 应引导 Agent 输出 passed/failed"""
-        prompt = build_checker_prompt(eval_report="report")
+        prompt = build_checker_prompt(report_path="/tmp/report.md")
         prompt_lower = prompt.lower()
         assert "passed" in prompt_lower or "pass" in prompt_lower
         assert "failed" in prompt_lower or "fail" in prompt_lower

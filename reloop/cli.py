@@ -327,6 +327,9 @@ def run(
     no_git_commit: bool = typer.Option(
         False, "--no-git-commit", help="禁用自动 Git commit"
     ),
+    no_live_ui: bool = typer.Option(
+        False, "--no-live-ui", help="禁用 Live UI 分区界面，使用经典输出模式"
+    ),
     config: Path = typer.Option(
         None, "--config", "-c", help="配置文件路径 (默认: ./reloop.yaml)"
     ),
@@ -384,12 +387,15 @@ def run(
             enable_git_commit=not no_git_commit,
             fresh=fresh,
             interactive=not non_interactive,
+            use_live_ui=not no_live_ui,
         )
 
-        print(f"\n✅ 迭代完成！")
-        print(f"   成功: {result.success}")
-        print(f"   轮数: {result.rounds}")
-        print(f"   Runs: {', '.join(result.run_ids)}")
+        # Live UI 模式下摘要已在 loop 中打印，这里不重复
+        if no_live_ui:
+            print(f"\n✅ 迭代完成！")
+            print(f"   成功: {result.success}")
+            print(f"   轮数: {result.rounds}")
+            print(f"   Runs: {', '.join(result.run_ids)}")
 
     except Exception as e:
         print(f"\n❌ 运行失败: {e}")

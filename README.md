@@ -50,7 +50,7 @@ project-root/
 
 ## Quick Start
 
-> **Status**: The framework is currently in the design phase. The specs are finalized; implementation is in progress.
+> **Status**: Core framework (`reloop init` / `reloop run` / `reloop status` / `reloop clean`) is implemented. Drivers for FlickLink (Duet Workspace) and a mock driver for tests are available; Claude Code / Codex / Gemini drivers are planned.
 
 ### 1. Initialize a Task
 
@@ -66,11 +66,11 @@ The init phase is agent-driven and interactive. Three built-in **Meta Skills** w
 
 ### 2. Run the Iteration Loop
 
-Once initialization is complete, start the automated loop:
+Once initialization is complete, create `reloop.yaml` (see
+[`reloop.yaml.example`](./reloop.yaml.example)) and start the automated loop:
 
 ```bash
-# (planned CLI — not yet implemented)
-reloop run --driver claude-code --workdir ./task
+reloop run
 ```
 
 The Python loop will:

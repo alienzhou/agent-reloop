@@ -50,20 +50,23 @@ def build_evaluator_prompt(
     )
 
 
-def build_checker_prompt(eval_report: str) -> str:
+def build_checker_prompt(report_path: str) -> str:
     """构建 checker 的 prompt。
 
     Checker 是通用的、任务无关的——只判断评估报告是否表示通过。
     要求使用 XML 格式输出。
+
+    Args:
+        report_path: 评估报告文件的路径，Checker Agent 需要读取此文件
     """
     return (
-        "# Evaluation Report\n\n"
-        + eval_report
-        + "\n\n---\n\n"
+        "# Evaluation Report Location\n\n"
+        + f"Report path: `{report_path}`\n\n"
+        + "---\n\n"
         + "# Instructions\n\n"
         + "You are a **task-agnostic binary classifier**. \n\n"
         + "Your job:\n"
-        + "1. Read the evaluation report above\n"
+        + "1. Read the evaluation report from the path above\n"
         + "2. Determine if it indicates overall success or failure\n"
         + "3. Output your decision in XML format\n\n"
         + "You do NOT need to:\n"

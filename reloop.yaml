@@ -1,0 +1,19 @@
+# Reloop runtime configuration.
+# Executor / Evaluator 都运行在同一 Duet Workspace 下，使用 CLAUDE_OPUS_4_5。
+# 游戏内的 Claw（sol 内部）也绑定到同一 workspace，但使用 GLM_5 作为决策模型。
+
+driver:
+  type: flick
+
+  flick:
+    # Duet Workspace — 统一 workspace，便于计费 / 可观测
+    workspace: "d1737cec4ae724377c3153eef9d6cf6b"
+
+    # Executor / Evaluator 使用 Claude Opus 4.5（代码能力）
+    model: "CLAUDE_OPUS_4_5"
+
+    # Agent mode，适合写代码、评估产物
+    mode: "agent"
+
+    # 结构化 JSON 输出，便于解析
+    json_output: true

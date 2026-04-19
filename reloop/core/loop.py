@@ -73,7 +73,8 @@ def run_loop(
     enable_git_commit: bool = True,
     fresh: bool = False,
     interactive: bool = True,
-    stream_max_lines: int = 4,
+    stream_max_lines: int = 15,
+    use_live_ui: bool = True,
 ) -> LoopResult:
     """执行 Reloop 迭代主循环。
 
@@ -92,6 +93,7 @@ def run_loop(
         fresh:           强制从头开始（忽略历史状态）
         interactive:     是否交互模式（提示用户选择）
         stream_max_lines: 流式输出终端显示行数
+        use_live_ui:     是否使用 Live UI 分区界面
 
     Returns:
         LoopResult 包含成功/失败、轮数、run_id 列表
@@ -115,6 +117,233 @@ def run_loop(
     if checker_driver is None:
         checker_driver = evaluator_driver
 
+    # 根据 use_live_ui 选择执行方式
+    if use_live_ui:
+        return _run_loop_with_live_ui(
+            project_root=project_root,
+            intent=intent,
+            eval_skill=eval_skill,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
+            checker_driver=checker_driver,
+            max_iterations=max_iterations,
+            enable_git_commit=enable_git_commit,
+            stream_max_lines=stream_max_lines,
+        )
+    else:
+        return _run_loop_classic(
+            project_root=project_root,
+            intent=intent,
+            eval_skill=eval_skill,
+            executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
+            checker_driver=checker_driver,
+            max_iterations=max_iterations,
+            enable_git_commit=enable_git_commit,
+            stream_max_lines=stream_max_lines,
+        )
+
+
+def _run_loop_with_live_ui(
+    project_root: Path,
+    intent: str,
+    eval_skill: str,
+    executor_driver: Driver,
+    evaluator_driver: Driver,
+    checker_driver: Driver,
+    max_iterations: int,
+    enable_git_commit: bool,
+    stream_max_lines: int,
+) -> LoopResult:
+    """使用 Live UI 执行迭代循环。"""
+    from reloop.core.ui import ReloopLiveUI, StageStatus
+
+    ui = ReloopLiveUI(max_output_lines=stream_max_lines)
+    
+    last_eval_result: Optional[str] = None
+    run_ids: List[str] = []
+    workdir = str(project_root)
+
+    with ui.live_context():
+        for round_num in range(1, max_iterations + 1):
+            logger.info("=== Round %d ===", round_num)
+
+            # ① 初始化工作空间
+            run_dir = init_workspace(project_root)
+            run_id = run_dir.name
+            run_ids.append(run_id)
+            logger.info("Workspace initialized: %s", run_dir)
+
+            # 获取日志路径
+            log_paths = get_run_log_paths(project_root, run_id)
+
+            # 通知 UI 开始新一轮
+            ui.start_round(round_num, max_iterations, run_id)
+
+            # ② Executor
+            exec_spec = _EXEC_SPEC_TEMPLATE.format(
+                solution_dir=str(project_root / "task" / "solution"),
+                artifacts_dir=str(run_dir / "artifacts"),
+                logs_dir=str(run_dir / "logs"),
+            )
+            executor_prompt = build_executor_prompt(intent, last_eval_result, exec_spec)
+            logger.info("Running executor...")
+
+            # 记录 prompt
+            _log_prompt(log_paths["prompt"], "EXECUTOR", executor_prompt)
+
+            # 设置 UI 状态
+            ui.set_stage("Executor", StageStatus.RUNNING)
+
+            # 创建双重回调：写入文件 + 更新 UI
+            executor_stream = StreamOutput(log_path=log_paths["executor"], max_lines=1000)
+            
+            def executor_callback(chunk: str) -> None:
+                executor_stream.write(chunk)
+                ui.write_output(chunk)
+
+            executor_output = executor_driver.run(
+                prompt=executor_prompt,
+                workdir=workdir,
+                stream_callback=executor_callback,
+            )
+            executor_stream.finalize()
+            ui.complete_stage("Executor")
+
+            # 记录 driver call
+            log_driver_call(
+                log_path=log_paths["driver"],
+                command=["executor", "agent"],
+                workdir=workdir,
+                prompt=executor_prompt,
+                output=executor_output,
+                exit_code=0,
+                duration=0.0,
+            )
+
+            # git commit after executor
+            if enable_git_commit:
+                auto_commit_after_execution(project_root, run_id)
+
+            # ③ Evaluator
+            artifacts_dir = str(run_dir / "artifacts")
+            evaluator_prompt = build_evaluator_prompt(artifacts_dir, eval_skill)
+            logger.info("Running evaluator...")
+
+            _log_prompt(log_paths["prompt"], "EVALUATOR", evaluator_prompt)
+
+            ui.set_stage("Evaluator", StageStatus.RUNNING)
+
+            evaluator_stream = StreamOutput(log_path=log_paths["evaluator"], max_lines=1000)
+            
+            def evaluator_callback(chunk: str) -> None:
+                evaluator_stream.write(chunk)
+                ui.write_output(chunk)
+
+            eval_output = evaluator_driver.run(
+                prompt=evaluator_prompt,
+                workdir=workdir,
+                stream_callback=evaluator_callback,
+            )
+            evaluator_stream.finalize()
+            ui.complete_stage("Evaluator")
+
+            log_driver_call(
+                log_path=log_paths["driver"],
+                command=["evaluator", "agent"],
+                workdir=workdir,
+                prompt=evaluator_prompt,
+                output=eval_output,
+                exit_code=0,
+                duration=0.0,
+            )
+
+            # 保存评估报告
+            report_path = run_dir / "eval-report" / "report.md"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(eval_output)
+            last_eval_result = eval_output
+
+            # ④ Checker
+            checker_prompt = build_checker_prompt(str(report_path))
+            logger.info("Running checker...")
+
+            _log_prompt(log_paths["prompt"], "CHECKER", checker_prompt)
+
+            ui.set_stage("Checker", StageStatus.RUNNING)
+
+            checker_stream = StreamOutput(log_path=log_paths["checker"], max_lines=1000)
+            
+            def checker_callback(chunk: str) -> None:
+                checker_stream.write(chunk)
+                ui.write_output(chunk)
+
+            checker_output = checker_driver.run(
+                prompt=checker_prompt,
+                workdir=workdir,
+                stream_callback=checker_callback,
+            )
+            checker_stream.finalize()
+
+            passed = parse_checker_result(checker_output)
+            explanation = extract_checker_explanation(checker_output)
+
+            ui.complete_stage("Checker", success=passed)
+            ui.end_round(passed)
+
+            log_driver_call(
+                log_path=log_paths["driver"],
+                command=["checker", "agent"],
+                workdir=workdir,
+                prompt=checker_prompt,
+                output=checker_output,
+                exit_code=0,
+                duration=0.0,
+            )
+
+            if passed:
+                logger.info("Round %d result: PASSED", round_num)
+            else:
+                logger.info("Round %d result: FAILED", round_num)
+
+            if passed:
+                # Live UI 结束后打印最终摘要
+                break
+
+        # 结束 live context 后打印摘要
+        pass
+
+    # 在 live context 外打印最终结果
+    if passed:
+        ui.print_final_summary(True, round_num, run_ids)
+        ui.print_log_paths(run_id, log_paths)
+        return LoopResult(
+            success=True,
+            rounds=round_num,
+            run_ids=run_ids,
+            last_eval_report=eval_output,
+        )
+    
+    # 如果循环结束但未通过
+    ui.print_final_summary(False, max_iterations, run_ids)
+    ui.print_log_paths(run_id, log_paths)
+    raise MaxIterationsExceededError(
+        f"Loop did not converge after {max_iterations} iterations"
+    )
+
+
+def _run_loop_classic(
+    project_root: Path,
+    intent: str,
+    eval_skill: str,
+    executor_driver: Driver,
+    evaluator_driver: Driver,
+    checker_driver: Driver,
+    max_iterations: int,
+    enable_git_commit: bool,
+    stream_max_lines: int,
+) -> LoopResult:
+    """经典模式执行迭代循环（无 Live UI）。"""
     last_eval_result: Optional[str] = None
     run_ids: List[str] = []
     workdir = str(project_root)
@@ -165,7 +394,7 @@ def run_loop(
             prompt=executor_prompt,
             output=executor_output,
             exit_code=0,
-            duration=0.0,  # 实际实现时记录真实时间
+            duration=0.0,
         )
 
         # git commit after executor
@@ -204,11 +433,12 @@ def run_loop(
 
         # 保存评估报告
         report_path = run_dir / "eval-report" / "report.md"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(eval_output)
         last_eval_result = eval_output
 
         # ④ Checker
-        checker_prompt = build_checker_prompt(eval_output)
+        checker_prompt = build_checker_prompt(str(report_path))
         logger.info("Running checker...")
 
         _log_prompt(log_paths["prompt"], "CHECKER", checker_prompt)

@@ -118,18 +118,21 @@ class ReloopLiveUI:
         self,
         max_output_lines: int = 15,
         console: Optional[Console] = None,
+        accumulated_time: float = 0.0,
     ) -> None:
         """初始化 Live UI。
         
         Args:
             max_output_lines: 输出面板最大行数
             console: 可选的 Console 实例
+            accumulated_time: 累计时间（秒），用于 resume 场景
         """
         self.console = console or Console()
         self.stream_panel = StreamPanel(max_lines=max_output_lines)
         self.state: Optional[RoundState] = None
         self._live: Optional[Live] = None
         self._start_time: float = 0
+        self._accumulated_time: float = accumulated_time
         self._history: list[tuple[int, str]] = []  # (round_num, result)
     
     def _build_status_panel(self) -> Panel:
@@ -143,8 +146,22 @@ class ReloopLiveUI:
         table.add_column("Value")
         
         # Round 信息
-        elapsed = time.time() - self._start_time
-        elapsed_str = f"{int(elapsed // 60):02d}:{int(elapsed % 60):02d}"
+        session_elapsed = time.time() - self._start_time
+        total_elapsed = self._accumulated_time + session_elapsed
+        
+        # 格式化时间显示
+        hours = int(total_elapsed // 3600)
+        minutes = int((total_elapsed % 3600) // 60)
+        secs = int(total_elapsed % 60)
+        if hours > 0:
+            elapsed_str = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        else:
+            elapsed_str = f"{minutes:02d}:{secs:02d}"
+        
+        # 如果有累计时间，显示额外信息
+        if self._accumulated_time > 0:
+            elapsed_str += f" [dim](+{int(self._accumulated_time)}s 累计)[/dim]"
+        
         table.add_row("Round", f"[bold cyan]{self.state.round_num}[/] / {self.state.max_rounds}")
         table.add_row("Run ID", f"[dim]{self.state.run_id}[/dim]")
         table.add_row("Elapsed", f"[yellow]{elapsed_str}[/yellow]")
@@ -197,6 +214,16 @@ class ReloopLiveUI:
                 yield
             finally:
                 self._live = None
+    
+    def get_session_elapsed(self) -> float:
+        """获取当前会话已用时间（秒）。"""
+        if self._start_time > 0:
+            return time.time() - self._start_time
+        return 0.0
+    
+    def get_total_elapsed(self) -> float:
+        """获取总已用时间（累计 + 当前会话）。"""
+        return self._accumulated_time + self.get_session_elapsed()
     
     def refresh(self) -> None:
         """刷新显示。"""

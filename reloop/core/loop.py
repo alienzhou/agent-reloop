@@ -22,6 +22,14 @@ from reloop.core.prompts import (
     build_evaluator_prompt,
     build_executor_prompt,
 )
+from reloop.core.report_sanitizer import sanitize_eval_report
+from reloop.core.timing import (
+    end_session,
+    format_elapsed_verbose,
+    load_timing,
+    reset_timing,
+    start_session,
+)
 from reloop.core.resume import (
     ResumeChoice,
     RunPhase,
@@ -202,9 +210,24 @@ def _run_loop_with_live_ui(
     """使用 Live UI 执行迭代循环。"""
     from reloop.core.ui import ReloopLiveUI, StageStatus
 
-    ui = ReloopLiveUI(max_output_lines=stream_max_lines)
+    # 加载累计时间
+    timing_data = load_timing(project_root)
+    accumulated_time = timing_data.total_elapsed_seconds
     
-    last_eval_result: Optional[str] = None
+    # 如果是 reset 模式，重置计时
+    if resume_choice == ResumeChoice.RESET:
+        reset_timing(project_root)
+        accumulated_time = 0.0
+    
+    # 开始新会话
+    start_session(project_root)
+    
+    ui = ReloopLiveUI(
+        max_output_lines=stream_max_lines,
+        accumulated_time=accumulated_time,
+    )
+    
+    last_eval_report_path: Optional[Path] = None
     run_ids: List[str] = []
     workdir = str(project_root)
     
@@ -219,7 +242,7 @@ def _run_loop_with_live_ui(
         run_dir = project_root / "run-sets" / resume_run_id
         report_path = run_dir / "eval-report" / "report.md"
         if report_path.exists():
-            last_eval_result = report_path.read_text(encoding="utf-8")
+            last_eval_report_path = report_path
             logger.info(f"Resuming from checker, reusing eval-report from {resume_run_id}")
     elif resume_choice == ResumeChoice.FROM_EVALUATOR and resume_run_id:
         # 从 Evaluator 开始，复用已有的 solution
@@ -259,7 +282,7 @@ def _run_loop_with_live_ui(
                     solution_dir=str(project_root / "task" / "solution"),
                     logs_dir=str(run_dir / "logs"),
                 )
-                executor_prompt = build_executor_prompt(intent, last_eval_result, exec_spec)
+                executor_prompt = build_executor_prompt(intent, last_eval_report_path, exec_spec)
                 logger.info("Running executor...")
 
                 # 记录 prompt
@@ -337,11 +360,14 @@ def _run_loop_with_live_ui(
                     duration=0.0,
                 )
 
-                # 保存评估报告
+                # 保存评估报告（清理敏感信息后）
                 report_path = run_dir / "eval-report" / "report.md"
                 report_path.parent.mkdir(parents=True, exist_ok=True)
-                report_path.write_text(eval_output)
-                last_eval_result = eval_output
+                # 清理评估报告中的敏感信息，避免泄露评估脚本和规则给执行器
+                sanitized_report = sanitize_eval_report(eval_output)
+                report_path.write_text(sanitized_report)
+                # 记录报告路径，供下一轮执行器使用
+                last_eval_report_path = report_path
 
             # 恢复标志只在第一轮生效
             skip_executor = False
@@ -408,20 +434,31 @@ def _run_loop_with_live_ui(
         # 结束 live context 后打印摘要
         pass
 
+    # 保存计时数据
+    session_elapsed = ui.get_session_elapsed()
+    final_timing = end_session(project_root, session_elapsed)
+    total_time_str = format_elapsed_verbose(final_timing.total_elapsed_seconds)
+    
     # 在 live context 外打印最终结果
     if passed:
         ui.print_final_summary(True, round_num, run_ids)
         ui.print_log_paths(run_id, log_paths)
+        ui.console.print(f"[dim]⏱️  总耗时: {total_time_str}[/dim]")
+        # 读取最后的评估报告内容
+        last_report_content = None
+        if last_eval_report_path and last_eval_report_path.exists():
+            last_report_content = last_eval_report_path.read_text(encoding="utf-8")
         return LoopResult(
             success=True,
             rounds=round_num,
             run_ids=run_ids,
-            last_eval_report=eval_output if 'eval_output' in dir() else last_eval_result,
+            last_eval_report=last_report_content,
         )
     
     # 如果循环结束但未通过
     ui.print_final_summary(False, max_iterations, run_ids)
     ui.print_log_paths(run_id, log_paths)
+    ui.console.print(f"[dim]⏱️  总耗时: {total_time_str}[/dim]")
     raise MaxIterationsExceededError(
         f"Loop did not converge after {max_iterations} iterations"
     )
@@ -441,7 +478,20 @@ def _run_loop_classic(
     resume_run_id: Optional[str] = None,
 ) -> LoopResult:
     """经典模式执行迭代循环（无 Live UI）。"""
-    last_eval_result: Optional[str] = None
+    # 加载累计时间
+    timing_data = load_timing(project_root)
+    accumulated_time = timing_data.total_elapsed_seconds
+    
+    # 如果是 reset 模式，重置计时
+    if resume_choice == ResumeChoice.RESET:
+        reset_timing(project_root)
+        accumulated_time = 0.0
+    
+    # 开始新会话
+    start_session(project_root)
+    session_start_time = time.time()
+    
+    last_eval_report_path: Optional[Path] = None
     run_ids: List[str] = []
     workdir = str(project_root)
     
@@ -455,11 +505,15 @@ def _run_loop_classic(
         run_dir = project_root / "run-sets" / resume_run_id
         report_path = run_dir / "eval-report" / "report.md"
         if report_path.exists():
-            last_eval_result = report_path.read_text(encoding="utf-8")
+            last_eval_report_path = report_path
             print(f"[{time.strftime('%H:%M:%S')}] ⏭️ 恢复模式：从 Checker 开始，复用 {resume_run_id} 的 eval-report")
     elif resume_choice == ResumeChoice.FROM_EVALUATOR and resume_run_id:
         skip_executor = True
         print(f"[{time.strftime('%H:%M:%S')}] ⏭️ 恢复模式：从 Evaluator 开始，复用 {resume_run_id} 的 solution")
+    
+    # 显示累计时间信息
+    if accumulated_time > 0:
+        print(f"[{time.strftime('%H:%M:%S')}] ⏱️  累计时间: {format_elapsed_verbose(accumulated_time)}")
 
     for round_num in range(1, max_iterations + 1):
         logger.info("=== Round %d ===", round_num)
@@ -487,7 +541,7 @@ def _run_loop_classic(
                 solution_dir=str(project_root / "task" / "solution"),
                 logs_dir=str(run_dir / "logs"),
             )
-            executor_prompt = build_executor_prompt(intent, last_eval_result, exec_spec)
+            executor_prompt = build_executor_prompt(intent, last_eval_report_path, exec_spec)
             logger.info("Running executor...")
 
             # 记录 prompt
@@ -526,8 +580,8 @@ def _run_loop_classic(
         if skip_evaluator and round_num == 1:
             print(f"[{time.strftime('%H:%M:%S')}] ⏭️ Evaluator skipped (resume mode)")
         else:
-            artifacts_dir = str(run_dir / "artifacts")
-            evaluator_prompt = build_evaluator_prompt(artifacts_dir, eval_skill)
+            solution_dir = str(project_root / "task" / "solution")
+            evaluator_prompt = build_evaluator_prompt(solution_dir, eval_skill)
             logger.info("Running evaluator...")
 
             _log_prompt(log_paths["prompt"], "EVALUATOR", evaluator_prompt)
@@ -555,11 +609,14 @@ def _run_loop_classic(
                 duration=0.0,
             )
 
-            # 保存评估报告
+            # 保存评估报告（清理敏感信息后）
             report_path = run_dir / "eval-report" / "report.md"
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(eval_output)
-            last_eval_result = eval_output
+            # 清理评估报告中的敏感信息，避免泄露评估脚本和规则给执行器
+            sanitized_report = sanitize_eval_report(eval_output)
+            report_path.write_text(sanitized_report)
+            # 记录报告路径，供下一轮执行器使用
+            last_eval_report_path = report_path
 
         # 恢复标志只在第一轮生效
         skip_executor = False
@@ -625,13 +682,29 @@ def _run_loop_classic(
 """)
 
         if passed:
+            # 保存计时数据
+            session_elapsed = time.time() - session_start_time
+            final_timing = end_session(project_root, session_elapsed)
+            total_time_str = format_elapsed_verbose(final_timing.total_elapsed_seconds)
+            print(f"[{time.strftime('%H:%M:%S')}] ⏱️  总耗时: {total_time_str}")
+            
+            # 读取最后的评估报告内容
+            last_report_content = None
+            if last_eval_report_path and last_eval_report_path.exists():
+                last_report_content = last_eval_report_path.read_text(encoding="utf-8")
             return LoopResult(
                 success=True,
                 rounds=round_num,
                 run_ids=run_ids,
-                last_eval_report=eval_output if 'eval_output' in dir() else last_eval_result,
+                last_eval_report=last_report_content,
             )
 
+    # 保存计时数据（失败情况）
+    session_elapsed = time.time() - session_start_time
+    final_timing = end_session(project_root, session_elapsed)
+    total_time_str = format_elapsed_verbose(final_timing.total_elapsed_seconds)
+    print(f"[{time.strftime('%H:%M:%S')}] ⏱️  总耗时: {total_time_str}")
+    
     raise MaxIterationsExceededError(
         f"Loop did not converge after {max_iterations} iterations"
     )

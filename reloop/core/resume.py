@@ -353,6 +353,8 @@ def full_cleanup(project_root: Path, keep_logs: bool = False, keep_solution: boo
         keep_logs: 是否保留日志
         keep_solution: 是否保留 solution 目录内容
     """
+    from reloop.core.timing import reset_timing
+    
     # 获取初始 commit
     result = subprocess.run(
         ["git", "rev-list", "--max-parents=0", "HEAD"],
@@ -398,6 +400,10 @@ def full_cleanup(project_root: Path, keep_logs: bool = False, keep_solution: boo
         if log_file.exists():
             log_file.unlink()
             logger.info("Removed system log")
+
+    # 重置计时数据
+    reset_timing(project_root)
+    logger.info("Reset timing data")
 
     logger.info("Full cleanup completed")
 

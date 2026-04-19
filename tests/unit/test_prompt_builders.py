@@ -15,7 +15,7 @@ class TestBuildExecutorPrompt:
     def test_contains_intent(self):
         prompt = build_executor_prompt(
             intent="Build a data pipeline",
-            last_eval_result=None,
+            last_eval_report_path=None,
             exec_spec="Put artifacts in run-sets/",
         )
         assert "Build a data pipeline" in prompt
@@ -23,44 +23,47 @@ class TestBuildExecutorPrompt:
     def test_contains_exec_spec(self):
         prompt = build_executor_prompt(
             intent="task",
-            last_eval_result=None,
+            last_eval_report_path=None,
             exec_spec="Artifacts go to run-sets/run-001/artifacts/",
         )
         assert "run-sets/run-001/artifacts/" in prompt
 
     def test_first_round_no_eval_result(self):
-        """首轮 last_eval_result 为 None → prompt 中不出现 eval 区段"""
+        """首轮 last_eval_report_path 为 None → prompt 中不出现 eval 区段"""
         prompt = build_executor_prompt(
             intent="task",
-            last_eval_result=None,
+            last_eval_report_path=None,
             exec_spec="spec",
         )
         assert "previous evaluation" not in prompt.lower()
         assert "eval result" not in prompt.lower()
 
     def test_first_round_empty_string_eval_result(self):
-        """首轮 last_eval_result 为空字符串 → 同样不出现 eval 区段"""
+        """首轮 last_eval_report_path 为空字符串 → 同样不出现 eval 区段"""
         prompt = build_executor_prompt(
             intent="task",
-            last_eval_result="",
+            last_eval_report_path="",
             exec_spec="spec",
         )
         assert "previous evaluation" not in prompt.lower()
 
-    def test_subsequent_round_includes_eval(self):
-        eval_result = "L1 failed: output count mismatch, expected 10, got 8"
+    def test_subsequent_round_includes_eval_path(self):
+        """后续轮次应包含评估报告路径"""
+        eval_report_path = "/path/to/eval-report/report.md"
         prompt = build_executor_prompt(
             intent="task",
-            last_eval_result=eval_result,
+            last_eval_report_path=eval_report_path,
             exec_spec="spec",
         )
-        assert eval_result in prompt
+        assert eval_report_path in prompt
+        # 应该指导执行器去读取报告
+        assert "read" in prompt.lower()
 
     def test_no_skill_flag_markers(self):
         """Skill 应内联到 prompt，不应出现 --skill 标记"""
         prompt = build_executor_prompt(
             intent="task",
-            last_eval_result=None,
+            last_eval_report_path=None,
             exec_spec="spec content here",
         )
         assert "--skill" not in prompt

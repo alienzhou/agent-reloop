@@ -2,29 +2,37 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from pathlib import Path
+from typing import Optional, Union
 
 
 def build_executor_prompt(
     intent: str,
-    last_eval_result: Optional[str],
+    last_eval_report_path: Optional[Union[str, Path]],
     exec_spec: str,
 ) -> str:
     """构建 executor 的 prompt。
 
-    将 INTENT、上一轮评估结果（如有）、执行规范内联组装为完整 prompt。
+    将 INTENT、上一轮评估报告路径（如有）、执行规范内联组装为完整 prompt。
+    
+    Args:
+        intent: 任务意图内容
+        last_eval_report_path: 上一轮评估报告的路径（让执行器自己读取），None 表示首轮
+        exec_spec: 执行规范内容
     """
     sections = [
         "# Task Intent\n\n" + intent,
         "# Execution Spec\n\n" + exec_spec,
     ]
 
-    if last_eval_result:
+    if last_eval_report_path:
         sections.insert(
             1,
             "# Previous Evaluation Result\n\n"
-            "Fix the issues identified in the last round:\n\n"
-            + last_eval_result,
+            "Fix the issues identified in the last round.\n\n"
+            f"**Read the evaluation report at:** `{last_eval_report_path}`\n\n"
+            "The report contains the problems found and suggestions for fixing them. "
+            "Read the report carefully and address all issues before proceeding."
         )
 
     return "\n\n---\n\n".join(sections)

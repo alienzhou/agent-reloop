@@ -219,13 +219,17 @@ class FlickDriver(Driver):
     def _parse_json_response(self, response: str) -> str:
         """解析 JSON Lines 响应，提取 agent 文本内容。
 
-        flick link prompt --duet-json 输出格式为 JSON Lines (每行一个 JSON 对象)：
+        flick link prompt --duet-json 输出格式为 JSON Lines，但实际输出可能：
+        1. 每行一个 JSON 对象（标准 JSON Lines）
+        2. 多个 JSON 对象拼接在一起（无换行符）
+
+        消息类型：
         - {"type": "session_created", ...}
         - {"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": "..."}}
         - {"type": "end", ...}
 
         Args:
-            response: 原始响应字符串（JSON Lines 格式）
+            response: 原始响应字符串
 
         Returns:
             拼接后的 agent 文本内容
@@ -235,27 +239,82 @@ class FlickDriver(Driver):
 
         text_chunks: list[str] = []
 
-        for line in response.splitlines():
-            line = line.strip()
-            if not line:
-                continue
+        # 尝试提取所有 JSON 对象（处理拼接在一起的情况）
+        json_objects = self._extract_json_objects(response)
 
-            try:
-                data = json.loads(line)
-                if isinstance(data, dict):
-                    # 处理 agent_message_chunk 类型
-                    if data.get("updateType") == "agent_message_chunk":
-                        content = data.get("content", {})
-                        if isinstance(content, dict) and content.get("type") == "text":
-                            text = content.get("text", "")
-                            if text:
-                                text_chunks.append(text)
-            except json.JSONDecodeError:
-                # 非 JSON 行，可能是纯文本（兼容非 JSON 模式）
-                text_chunks.append(line)
+        for data in json_objects:
+            if isinstance(data, dict):
+                # 处理 agent_message_chunk 类型
+                if data.get("updateType") == "agent_message_chunk":
+                    content = data.get("content", {})
+                    if isinstance(content, dict) and content.get("type") == "text":
+                        text = content.get("text", "")
+                        if text:
+                            text_chunks.append(text)
 
         # 如果没有提取到任何文本，返回原始响应
         if not text_chunks:
             return response
 
         return "".join(text_chunks)
+
+    def _extract_json_objects(self, text: str) -> list[Any]:
+        """从文本中提取所有 JSON 对象。
+
+        处理两种情况：
+        1. 标准 JSON Lines（每行一个对象）
+        2. 拼接的 JSON 对象（无换行符分隔）
+
+        Args:
+            text: 包含 JSON 对象的文本
+
+        Returns:
+            提取出的 JSON 对象列表
+        """
+        objects: list[Any] = []
+
+        # 首先尝试按行解析（标准 JSON Lines）
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                objects.append(obj)
+            except json.JSONDecodeError:
+                # 该行不是有效 JSON，可能是拼接的多个对象
+                pass
+
+        # 如果按行解析成功且有结果，直接返回
+        if objects:
+            return objects
+
+        # 否则尝试提取拼接在一起的 JSON 对象
+        # 使用迭代方式查找 JSON 对象边界
+        pos = 0
+        text_len = len(text)
+
+        while pos < text_len:
+            # 跳过空白
+            while pos < text_len and text[pos] in ' \t\n\r':
+                pos += 1
+
+            if pos >= text_len:
+                break
+
+            # 查找下一个 { 开始
+            if text[pos] != '{':
+                pos += 1
+                continue
+
+            # 尝试从当前位置解析 JSON 对象
+            try:
+                decoder = json.JSONDecoder()
+                obj, end_idx = decoder.raw_decode(text, pos)
+                objects.append(obj)
+                pos = pos + end_idx
+            except json.JSONDecodeError:
+                # 无法解析，跳过这个字符
+                pos += 1
+
+        return objects

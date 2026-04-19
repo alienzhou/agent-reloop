@@ -465,3 +465,157 @@ class TestFlickDriverEdgeCases:
         # 验证 subprocess.run 被调用时 cwd 参数正确
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs.get("cwd") == test_workdir
+
+
+class TestFlickDriverUtf8Encoding:
+    """测试 UTF-8 编码处理（P1 测试覆盖修复）。"""
+
+    def test_blocking_mode_handles_bytes_output(self):
+        """阻塞模式正确处理 bytes 输出。"""
+        driver = FlickDriver(workspace="test-workspace", json_output=False)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = b"Hello World"  # bytes 类型
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = driver.run(prompt="test", workdir="/tmp")
+
+        assert result == "Hello World"
+
+    def test_blocking_mode_handles_incomplete_utf8(self):
+        """阻塞模式处理不完整的 UTF-8 字节序列。"""
+        driver = FlickDriver(workspace="test-workspace", json_output=False)
+
+        # 不完整的 UTF-8 序列：0xe5 是中文字符的起始字节，但缺少后续字节
+        incomplete_utf8 = b"Hello \xe5 World"
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = incomplete_utf8
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = driver.run(prompt="test", workdir="/tmp")
+
+        # errors='replace' 应该将无效字节替换为 �
+        assert "Hello" in result
+        assert "World" in result
+        assert "�" in result  # 替换字符
+
+    def test_blocking_mode_handles_chinese_characters(self):
+        """阻塞模式正确处理中文字符。"""
+        driver = FlickDriver(workspace="test-workspace", json_output=False)
+
+        chinese_text = "你好世界"
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = chinese_text.encode('utf-8')  # 正确的 UTF-8 编码
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = driver.run(prompt="test", workdir="/tmp")
+
+        assert result == chinese_text
+
+    def test_blocking_mode_nonzero_exit_with_bytes_stderr(self):
+        """阻塞模式非零退出码时正确解码 bytes stderr。"""
+        driver = FlickDriver(workspace="test-workspace")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = b"Error message"  # bytes 类型
+
+        with patch("subprocess.run", return_value=mock_result):
+            with pytest.raises(FlickDriverError, match="Error message"):
+                driver.run(prompt="test", workdir="/tmp")
+
+    def test_streaming_mode_handles_bytes_lines(self):
+        """流式模式正确处理 bytes 行。"""
+        driver = FlickDriver(workspace="test-workspace", json_output=False)
+
+        collected_lines = []
+        def callback(line: str):
+            collected_lines.append(line)
+
+        mock_process = MagicMock()
+        # 模拟返回 bytes 行
+        mock_process.stdout = iter([b"Line 1\n", b"Line 2\n"])
+        mock_process.returncode = 0
+        mock_process.wait.return_value = None
+
+        with patch("subprocess.Popen", return_value=mock_process):
+            result = driver.run(
+                prompt="test",
+                workdir="/tmp",
+                stream_callback=callback,
+            )
+
+        assert collected_lines == ["Line 1", "Line 2"]
+
+    def test_streaming_mode_handles_incomplete_utf8_bytes(self):
+        """流式模式处理不完整的 UTF-8 字节序列。"""
+        driver = FlickDriver(workspace="test-workspace", json_output=False)
+
+        collected_lines = []
+        def callback(line: str):
+            collected_lines.append(line)
+
+        mock_process = MagicMock()
+        # 不完整的 UTF-8 序列
+        mock_process.stdout = iter([b"Hello \xe5 World\n"])
+        mock_process.returncode = 0
+        mock_process.wait.return_value = None
+
+        with patch("subprocess.Popen", return_value=mock_process):
+            result = driver.run(
+                prompt="test",
+                workdir="/tmp",
+                stream_callback=callback,
+            )
+
+        # 应该有输出，且包含替换字符
+        assert len(collected_lines) == 1
+        assert "Hello" in collected_lines[0]
+        assert "�" in collected_lines[0]
+
+
+class TestFlickDriverRobustness:
+    """测试健壮性（P1 边界条件修复）。"""
+
+    def test_streaming_mode_stdout_none_raises_error(self):
+        """流式模式 stdout 为 None 时抛出异常。"""
+        driver = FlickDriver(workspace="test-workspace", json_output=False)
+
+        mock_process = MagicMock()
+        mock_process.stdout = None  # stdout 为 None
+
+        with patch("subprocess.Popen", return_value=mock_process):
+            with pytest.raises(FlickDriverError, match="stdout is None"):
+                driver.run(
+                    prompt="test",
+                    workdir="/tmp",
+                    stream_callback=lambda x: None,
+                )
+
+    def test_streaming_mode_mixed_str_and_bytes(self):
+        """流式模式处理混合的字符串和字节输出。"""
+        driver = FlickDriver(workspace="test-workspace", json_output=False)
+
+        collected_lines = []
+        def callback(line: str):
+            collected_lines.append(line)
+
+        mock_process = MagicMock()
+        # 混合 str 和 bytes（模拟 mock 场景）
+        mock_process.stdout = iter(["String line\n", b"Bytes line\n"])
+        mock_process.returncode = 0
+        mock_process.wait.return_value = None
+
+        with patch("subprocess.Popen", return_value=mock_process):
+            result = driver.run(
+                prompt="test",
+                workdir="/tmp",
+                stream_callback=callback,
+            )
+
+        assert "String line" in collected_lines
+        assert "Bytes line" in collected_lines

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 from typing import Any, Callable, Optional
@@ -117,6 +118,7 @@ class FlickDriver(Driver):
         """流式执行，实时回调输出。
 
         使用 subprocess.Popen 逐行读取输出，每行调用回调函数。
+        使用二进制模式读取并手动处理 UTF-8 解码，以正确处理不完整的字节序列。
 
         Args:
             cmd: 完整的命令参数列表
@@ -138,17 +140,46 @@ class FlickDriver(Driver):
                 cwd=workdir,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,  # 行缓冲
+                # 使用二进制模式，避免在多字节字符中间截断时的解码错误
             )
         except FileNotFoundError:
             raise FlickDriverError("flick 命令未找到，请确保已安装 flick CLI")
 
+        stdout_wrapper = None
         try:
+            # 检查 stdout 是否有效且支持 TextIOWrapper（真实的二进制流）
+            # 测试场景可能使用 mock 对象，此时回退到简单迭代模式
+            stdout = process.stdout
+            
+            # P1 修复: 防御性检查 stdout 是否为 None
+            if stdout is None:
+                raise FlickDriverError("subprocess stdout is None")
+            
+            # 检查是否支持 TextIOWrapper（有 readable 方法且可调用）
+            if hasattr(stdout, 'readable') and callable(getattr(stdout, 'readable', None)):
+                try:
+                    # 使用 TextIOWrapper 包装二进制流，设置 errors='replace' 处理无效字节
+                    # 这样不完整的 UTF-8 序列会被替换为 � 而不是抛出异常
+                    stdout_wrapper = io.TextIOWrapper(
+                        stdout,
+                        encoding='utf-8',
+                        errors='replace',  # 用 � 替换无法解码的字节
+                        newline='',
+                    )
+                    stdout = stdout_wrapper
+                except (TypeError, AttributeError):
+                    # P1 修复: 如果 TextIOWrapper 构造失败，回退到直接迭代
+                    pass
+            
             # 逐行读取输出
-            for line in process.stdout:
-                full_output.append(line)
-                stream_callback(line.rstrip("\n"))
+            for line in stdout:
+                # 如果 line 是 bytes，需要手动解码
+                if isinstance(line, bytes):
+                    line = line.decode('utf-8', errors='replace')
+                # P2 修复: 防御性检查 line 不为 None
+                if line is not None:
+                    full_output.append(line)
+                    stream_callback(line.rstrip("\n"))
 
             # 等待进程结束
             process.wait(timeout=timeout)
@@ -157,6 +188,13 @@ class FlickDriver(Driver):
             process.kill()
             process.wait()  # 确保进程完全终止
             raise FlickDriverError(f"flick link prompt 超时 ({timeout}s)")
+        finally:
+            # P2 修复: 显式关闭 TextIOWrapper（如果创建了的话）
+            if stdout_wrapper is not None:
+                try:
+                    stdout_wrapper.detach()  # 使用 detach 而非 close，避免关闭底层流
+                except Exception:
+                    pass
 
         if process.returncode != 0:
             raise FlickDriverError(
@@ -195,8 +233,8 @@ class FlickDriver(Driver):
                 cmd,
                 cwd=workdir,
                 capture_output=True,
-                text=True,
                 timeout=timeout,
+                # 使用二进制模式，手动解码以处理可能的编码问题
             )
         except subprocess.TimeoutExpired:
             raise FlickDriverError(f"flick link prompt 超时 ({timeout}s)")
@@ -204,11 +242,19 @@ class FlickDriver(Driver):
             raise FlickDriverError("flick 命令未找到，请确保已安装 flick CLI")
 
         if result.returncode != 0:
+            # 解码 stderr，处理 bytes 或 str（测试场景可能是 str）
+            stderr = result.stderr
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode('utf-8', errors='replace')
             raise FlickDriverError(
-                f"flick link prompt 失败 (exit {result.returncode}): {result.stderr}"
+                f"flick link prompt 失败 (exit {result.returncode}): {stderr}"
             )
 
-        response = result.stdout.strip()
+        # 解码 stdout，处理 bytes 或 str（测试场景可能是 str）
+        response = result.stdout
+        if isinstance(response, bytes):
+            response = response.decode('utf-8', errors='replace')
+        response = response.strip()
 
         # JSON 处理（如果启用）
         if self.json_output and response:

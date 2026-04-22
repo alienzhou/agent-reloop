@@ -122,6 +122,36 @@ class FlickDriver(Driver):
 
         return cmd
 
+    def _check_agent_completion(self, output_lines: list[str]) -> bool:
+        """检查 Agent 是否正常完成（通过检测 end_turn 信号）。
+
+        在 JSON 输出模式下，正常完成的 Agent 会输出包含以下特征的消息：
+        - {"type": "end", "stopReason": "end_turn", ...}
+        - 或 "stopReason": "end_turn" 出现在输出中
+
+        Args:
+            output_lines: 输出行列表
+
+        Returns:
+            如果检测到正常完成信号返回 True，否则返回 False
+        """
+        combined = "".join(output_lines)
+        
+        # 检查常见的正常完成信号
+        completion_signals = [
+            '"stopReason": "end_turn"',
+            '"stopReason":"end_turn"',
+            '"type": "end"',
+            '"type":"end"',
+        ]
+        
+        for signal in completion_signals:
+            if signal in combined:
+                logger.debug("Agent completion signal detected: %s", signal)
+                return True
+        
+        return False
+
     def _run_with_streaming(
         self,
         cmd: list[str],
@@ -215,13 +245,26 @@ class FlickDriver(Driver):
                 except Exception:
                     pass
 
+        # 检查退出码和 Agent 完成状态
         if process.returncode != 0:
-            logger.error(
-                "Streaming execution failed with exit code %s", process.returncode
-            )
-            raise FlickDriverError(
-                f"flick link prompt 失败 (exit {process.returncode})"
-            )
+            # 检查 Agent 是否正常完成（通过 end_turn 信号）
+            agent_completed = self._check_agent_completion(full_output)
+            
+            if agent_completed:
+                # Agent 正常完成但 CLI 返回非零退出码，降级为 warning
+                logger.warning(
+                    "flick CLI exited with code %s, but agent completed normally (end_turn detected). "
+                    "This is likely a graceful shutdown issue in flick CLI.",
+                    process.returncode
+                )
+            else:
+                # 真正的失败：Agent 未完成且退出码非零
+                logger.error(
+                    "Streaming execution failed with exit code %s", process.returncode
+                )
+                raise FlickDriverError(
+                    f"flick link prompt 失败 (exit {process.returncode})"
+                )
 
         response = "".join(full_output).strip()
 
@@ -269,24 +312,36 @@ class FlickDriver(Driver):
             logger.error("flick command not found")
             raise FlickDriverError("flick 命令未找到，请确保已安装 flick CLI")
 
-        if result.returncode != 0:
-            # 解码 stderr，处理 bytes 或 str（测试场景可能是 str）
-            stderr = result.stderr
-            if isinstance(stderr, bytes):
-                stderr = stderr.decode('utf-8', errors='replace')
-            logger.error(
-                "Blocking execution failed with exit code %s: %s",
-                result.returncode,
-                stderr[:200] if stderr else "",
-            )
-            raise FlickDriverError(
-                f"flick link prompt 失败 (exit {result.returncode}): {stderr}"
-            )
-
         # 解码 stdout，处理 bytes 或 str（测试场景可能是 str）
         response = result.stdout
         if isinstance(response, bytes):
             response = response.decode('utf-8', errors='replace')
+
+        if result.returncode != 0:
+            # 检查 Agent 是否正常完成（通过 end_turn 信号）
+            agent_completed = self._check_agent_completion([response])
+            
+            if agent_completed:
+                # Agent 正常完成但 CLI 返回非零退出码，降级为 warning
+                logger.warning(
+                    "flick CLI exited with code %s, but agent completed normally (end_turn detected). "
+                    "This is likely a graceful shutdown issue in flick CLI.",
+                    result.returncode
+                )
+            else:
+                # 真正的失败：Agent 未完成且退出码非零
+                stderr = result.stderr
+                if isinstance(stderr, bytes):
+                    stderr = stderr.decode('utf-8', errors='replace')
+                logger.error(
+                    "Blocking execution failed with exit code %s: %s",
+                    result.returncode,
+                    stderr[:200] if stderr else "",
+                )
+                raise FlickDriverError(
+                    f"flick link prompt 失败 (exit {result.returncode}): {stderr}"
+                )
+
         response = response.strip()
 
         # JSON 处理（如果启用）

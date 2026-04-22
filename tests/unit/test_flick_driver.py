@@ -155,11 +155,11 @@ class TestFlickDriverStreaming:
         mock_process.kill.assert_called_once()
 
     def test_streaming_nonzero_exit_raises(self):
-        """流式模式非零退出码抛出异常。"""
+        """流式模式非零退出码（无 end_turn 信号）抛出异常。"""
         driver = FlickDriver(workspace="test-workspace")
 
         mock_process = MagicMock()
-        mock_process.stdout = iter(["some output\n"])
+        mock_process.stdout = iter(["some output\n"])  # 没有 end_turn 信号
         mock_process.returncode = 1
         mock_process.wait.return_value = None
 
@@ -170,6 +170,32 @@ class TestFlickDriverStreaming:
                     workdir="/tmp",
                     stream_callback=lambda x: None,
                 )
+
+    def test_streaming_nonzero_exit_with_end_turn_succeeds(self):
+        """流式模式非零退出码但有 end_turn 信号时成功返回（容错）。"""
+        driver = FlickDriver(workspace="test-workspace")
+
+        # 模拟正常完成但 CLI 返回非零退出码的场景
+        json_output = [
+            '{"type": "session_created", "threadId": "th_123"}\n',
+            '{"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": "Hello"}}\n',
+            '{"type": "end", "stopReason": "end_turn"}\n',
+        ]
+
+        mock_process = MagicMock()
+        mock_process.stdout = iter(json_output)
+        mock_process.returncode = 1  # 非零退出码
+        mock_process.wait.return_value = None
+
+        with patch("subprocess.Popen", return_value=mock_process):
+            # 应该成功返回，而不是抛出异常
+            result = driver.run(
+                prompt="test",
+                workdir="/tmp",
+                stream_callback=lambda x: None,
+            )
+
+        assert result == "Hello"
 
 
 class TestFlickDriverBlocking:
@@ -209,16 +235,37 @@ class TestFlickDriverBlocking:
                 driver.run(prompt="test", workdir="/tmp")
 
     def test_blocking_nonzero_exit_raises(self):
-        """阻塞模式非零退出码抛出异常。"""
+        """阻塞模式非零退出码（无 end_turn 信号）抛出异常。"""
         driver = FlickDriver(workspace="test-workspace")
 
         mock_result = MagicMock()
         mock_result.returncode = 1
+        mock_result.stdout = "Some output"  # 没有 end_turn 信号
         mock_result.stderr = "Some error"
 
         with patch("subprocess.run", return_value=mock_result):
             with pytest.raises(FlickDriverError, match="失败"):
                 driver.run(prompt="test", workdir="/tmp")
+
+    def test_blocking_nonzero_exit_with_end_turn_succeeds(self):
+        """阻塞模式非零退出码但有 end_turn 信号时成功返回（容错）。"""
+        driver = FlickDriver(workspace="test-workspace")
+
+        # 模拟正常完成但 CLI 返回非零退出码的场景
+        json_output = '''{"type": "session_created", "threadId": "th_123"}
+{"type": "update", "updateType": "agent_message_chunk", "content": {"type": "text", "text": "Result"}}
+{"type": "end", "stopReason": "end_turn"}'''
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1  # 非零退出码
+        mock_result.stdout = json_output
+        mock_result.stderr = ""
+
+        with patch("subprocess.run", return_value=mock_result):
+            # 应该成功返回，而不是抛出异常
+            result = driver.run(prompt="test", workdir="/tmp")
+
+        assert result == "Result"
 
 
 class TestFlickDriverJsonParsing:
@@ -522,6 +569,7 @@ class TestFlickDriverUtf8Encoding:
 
         mock_result = MagicMock()
         mock_result.returncode = 1
+        mock_result.stdout = b"Some output"  # 需要设置 stdout，否则是 MagicMock
         mock_result.stderr = b"Error message"  # bytes 类型
 
         with patch("subprocess.run", return_value=mock_result):
@@ -619,3 +667,52 @@ class TestFlickDriverRobustness:
 
         assert "String line" in collected_lines
         assert "Bytes line" in collected_lines
+
+
+class TestFlickDriverAgentCompletion:
+    """测试 Agent 完成信号检测。"""
+
+    def test_check_agent_completion_with_end_turn(self):
+        """检测到 end_turn 信号返回 True。"""
+        driver = FlickDriver(workspace="test-workspace")
+        
+        output = ['{"type": "end", "stopReason": "end_turn"}\n']
+        assert driver._check_agent_completion(output) is True
+
+    def test_check_agent_completion_with_end_turn_no_spaces(self):
+        """检测紧凑格式的 end_turn 信号。"""
+        driver = FlickDriver(workspace="test-workspace")
+        
+        output = ['{"type":"end","stopReason":"end_turn"}\n']
+        assert driver._check_agent_completion(output) is True
+
+    def test_check_agent_completion_with_type_end(self):
+        """检测 type=end 信号。"""
+        driver = FlickDriver(workspace="test-workspace")
+        
+        output = ['{"type": "end"}\n']
+        assert driver._check_agent_completion(output) is True
+
+    def test_check_agent_completion_without_signal(self):
+        """无完成信号返回 False。"""
+        driver = FlickDriver(workspace="test-workspace")
+        
+        output = ['some random output\n', 'more output\n']
+        assert driver._check_agent_completion(output) is False
+
+    def test_check_agent_completion_empty_output(self):
+        """空输出返回 False。"""
+        driver = FlickDriver(workspace="test-workspace")
+        
+        assert driver._check_agent_completion([]) is False
+
+    def test_check_agent_completion_in_multiline_output(self):
+        """在多行输出中检测完成信号。"""
+        driver = FlickDriver(workspace="test-workspace")
+        
+        output = [
+            '{"type": "session_created", "threadId": "th_123"}\n',
+            '{"type": "update", "updateType": "agent_message_chunk"}\n',
+            '{"type": "end", "stopReason": "end_turn"}\n',
+        ]
+        assert driver._check_agent_completion(output) is True

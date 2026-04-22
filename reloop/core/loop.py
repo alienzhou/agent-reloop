@@ -21,7 +21,9 @@ from reloop.core.prompts import (
     build_checker_prompt,
     build_evaluator_prompt,
     build_executor_prompt,
+    build_history_runs_hint,
 )
+from reloop.core.report_sanitizer import abstract_eval_report
 from reloop.core.timing import (
     end_session,
     format_elapsed_verbose,
@@ -304,7 +306,31 @@ def _run_loop_with_live_ui(
                     solution_dir=str(project_root / "task" / "solution"),
                     logs_dir=str(run_dir / "logs"),
                 )
-                executor_prompt = build_executor_prompt(intent, last_eval_report_path, exec_spec)
+                
+                # 提案输出路径
+                proposal_output_path = str(run_dir / "proposal.md")
+                
+                # 历史 run-sets 提示
+                history_runs_hint = build_history_runs_hint(round_num)
+                
+                # 抽象化上一轮评估报告
+                abstract_summary = None
+                if last_eval_report_path and last_eval_report_path.exists():
+                    try:
+                        full_report = last_eval_report_path.read_text(encoding="utf-8")
+                        abstract_summary = abstract_eval_report(full_report, str(last_eval_report_path))
+                    except Exception as e:
+                        logger.warning(f"Failed to abstract eval report: {e}")
+                
+                executor_prompt = build_executor_prompt(
+                    intent=intent,
+                    last_eval_report_path=last_eval_report_path,
+                    exec_spec=exec_spec,
+                    round_num=round_num,
+                    proposal_output_path=proposal_output_path,
+                    history_runs_hint=history_runs_hint,
+                    abstract_eval_summary=abstract_summary,
+                )
                 logger.info("Running executor...")
 
                 # 记录 prompt
@@ -622,7 +648,31 @@ def _run_loop_classic(
                 solution_dir=str(project_root / "task" / "solution"),
                 logs_dir=str(run_dir / "logs"),
             )
-            executor_prompt = build_executor_prompt(intent, last_eval_report_path, exec_spec)
+            
+            # 提案输出路径
+            proposal_output_path = str(run_dir / "proposal.md")
+            
+            # 历史 run-sets 提示
+            history_runs_hint = build_history_runs_hint(round_num)
+            
+            # 抽象化上一轮评估报告
+            abstract_summary = None
+            if last_eval_report_path and last_eval_report_path.exists():
+                try:
+                    full_report = last_eval_report_path.read_text(encoding="utf-8")
+                    abstract_summary = abstract_eval_report(full_report, str(last_eval_report_path))
+                except Exception as e:
+                    logger.warning(f"Failed to abstract eval report: {e}")
+            
+            executor_prompt = build_executor_prompt(
+                intent=intent,
+                last_eval_report_path=last_eval_report_path,
+                exec_spec=exec_spec,
+                round_num=round_num,
+                proposal_output_path=proposal_output_path,
+                history_runs_hint=history_runs_hint,
+                abstract_eval_summary=abstract_summary,
+            )
             logger.info("Running executor...")
 
             # 记录 prompt

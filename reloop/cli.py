@@ -189,28 +189,36 @@ def _init_evaluator() -> None:
 
 
 def _get_evaluator_template() -> str:
-    """获取 Evaluator 模板。"""
+    """获取 Evaluator 模板。
+
+    注意：L0 / L1 是纯脚本验证层，检查项直接编码进脚本里，
+    不在 Markdown 中重复写 checklist（避免文档与脚本漂移）。
+    只有 L2（LLM 判断）才需要在文档中写评估标准。
+    """
     return """
 ```markdown
 # Evaluator Skill
 
 ## L0 - 安全检查
-[前置条件和安全边界检查]
-
-脚本: `task/scripts/check_l0.py`
+**执行**：运行 `task/scripts/check_l0.py`
+脚本 exit 0 = 通过，非 0 = 失败。检查项定义在脚本内，不在此列出。
 
 ## L1 - 机械性验证
-[格式、结构、存在性等确定性检查]
-
-脚本: `task/scripts/check_l1.py`
+**执行**：运行 `task/scripts/check_l1.py`
+脚本 exit 0 = 通过，非 0 = 失败。检查项定义在脚本内，不在此列出。
 
 ## L2 - 质量验证
-[语义、质量等需要 LLM 判断的检查]
+
+### 评估标准
+- [语义、质量等需要 LLM 判断的标准，逐条列出]
+
+### 评估提示词
+[LLM 评估时使用的 prompt]
 
 ## 评估流程
-1. 运行 L0 检查脚本
-2. 如果 L0 通过，运行 L1 检查脚本
-3. 如果 L1 通过，使用 LLM 进行 L2 评估
+1. 运行 `check_l0.py`，失败则停止
+2. 运行 `check_l1.py`，失败则停止
+3. 用 LLM 按 L2 评估标准打分
 4. 汇总结果
 ```
 """

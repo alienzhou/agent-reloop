@@ -350,17 +350,30 @@ def run(
         None, "--from-phase", "-p",
         help="从指定阶段开始 (evaluator/checker)，跳过已完成的阶段"
     ),
+    executor_driver_opt: str = typer.Option(
+        None, "--executor-driver",
+        help="executor 使用的 driver 类型 (mock/flick/codex)，覆盖配置文件中的设置"
+    ),
+    evaluator_driver_opt: str = typer.Option(
+        None, "--evaluator-driver",
+        help="evaluator 使用的 driver 类型 (mock/flick/codex)，覆盖配置文件中的设置；不指定则复用 executor driver"
+    ),
 ) -> None:
     """运行 Reloop 迭代循环。
-    
+
     \b
     恢复选项:
       --from-phase evaluator  从 Evaluator 开始，复用已有的 solution
       --from-phase checker    从 Checker 开始，复用已有的 eval-report
+
+    \b
+    Driver 选项:
+      --executor-driver codex   executor 使用 Codex CLI
+      --evaluator-driver flick  evaluator 使用 Flick（与 executor 不同）
     """
     from reloop.config import load_config
     from reloop.core.loop import run_loop
-    from reloop.drivers import create_driver
+    from reloop.drivers import create_driver_from_type, create_evaluator_driver, create_executor_driver
 
     logger.info("Starting reloop run: max_iterations=%d, fresh=%s", max_iterations, fresh)
 
@@ -368,8 +381,7 @@ def run(
 
     # 加载配置
     cfg = load_config(config)
-    driver_type = cfg.driver_type
-    logger.debug("Loaded config: workspace=%s, model=%s", project_root, driver_type)
+    logger.debug("Loaded config: workspace=%s", project_root)
 
     # 读取 INTENT
     if intent_file:
@@ -395,14 +407,38 @@ def run(
             print("   请创建 task/EVAL_SKILL.md 或使用 --eval 指定")
             raise typer.Exit(1)
 
-    # 创建 Driver
+    # 创建 Executor Driver
+    # 优先级：命令行参数 > 配置文件 driver.executor.type > 配置文件 driver.type
     try:
-        executor_driver = create_driver(cfg)
-        logger.debug("Created driver: type=%s", driver_type)
-        print(f"✓ 使用 Driver: {driver_type}")
+        if executor_driver_opt:
+            executor_driver = create_driver_from_type(executor_driver_opt, cfg)
+            executor_driver_name = executor_driver_opt
+        else:
+            executor_driver = create_executor_driver(cfg)
+            executor_driver_name = cfg.executor_driver_type
+        logger.debug("Created executor driver: type=%s", executor_driver_name)
+        print(f"✓ Executor Driver: {executor_driver_name}")
     except Exception as e:
-        logger.error("Failed to create driver: %s", e)
-        print(f"❌ 创建 Driver 失败: {e}")
+        logger.error("Failed to create executor driver: %s", e)
+        print(f"❌ 创建 Executor Driver 失败: {e}")
+        raise typer.Exit(1)
+
+    # 创建 Evaluator Driver（可与 executor 不同）
+    # 优先级：命令行参数 > 配置文件 driver.evaluator.type > 复用 executor driver
+    evaluator_driver = None
+    try:
+        if evaluator_driver_opt:
+            evaluator_driver = create_driver_from_type(evaluator_driver_opt, cfg)
+            evaluator_driver_name = evaluator_driver_opt
+            print(f"✓ Evaluator Driver: {evaluator_driver_name}")
+        elif cfg.evaluator_driver_type != cfg.executor_driver_type:
+            evaluator_driver = create_evaluator_driver(cfg)
+            evaluator_driver_name = cfg.evaluator_driver_type
+            print(f"✓ Evaluator Driver: {evaluator_driver_name}")
+        # else: evaluator_driver 保持 None，loop 中会复用 executor_driver
+    except Exception as e:
+        logger.error("Failed to create evaluator driver: %s", e)
+        print(f"❌ 创建 Evaluator Driver 失败: {e}")
         raise typer.Exit(1)
 
     # 验证 from_phase 参数
@@ -417,6 +453,7 @@ def run(
             intent=intent,
             eval_skill=eval_skill,
             executor_driver=executor_driver,
+            evaluator_driver=evaluator_driver,
             max_iterations=max_iterations,
             enable_git_commit=not no_git_commit,
             fresh=fresh,

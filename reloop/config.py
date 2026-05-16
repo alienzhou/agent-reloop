@@ -39,8 +39,30 @@ class ReloopConfig:
 
     @property
     def driver_type(self) -> str:
-        """获取 driver 类型。"""
+        """获取默认 driver 类型（executor 的回退值）。"""
         return self._config.get("driver", {}).get("type", "mock")
+
+    @property
+    def executor_driver_type(self) -> str:
+        """获取 executor driver 类型。
+
+        优先读取 driver.executor.type，若未配置则回退到 driver.type。
+        """
+        executor_cfg = self._config.get("driver", {}).get("executor", {})
+        if executor_cfg and executor_cfg.get("type"):
+            return executor_cfg["type"]
+        return self.driver_type
+
+    @property
+    def evaluator_driver_type(self) -> str:
+        """获取 evaluator driver 类型。
+
+        优先读取 driver.evaluator.type，若未配置则回退到 driver.type。
+        """
+        evaluator_cfg = self._config.get("driver", {}).get("evaluator", {})
+        if evaluator_cfg and evaluator_cfg.get("type"):
+            return evaluator_cfg["type"]
+        return self.driver_type
 
     @property
     def driver_config(self) -> Dict[str, Any]:
@@ -51,6 +73,12 @@ class ReloopConfig:
         """获取 FlickDriver 专用配置。"""
         config = self._config.get("driver", {}).get("flick", {})
         logger.debug("Flick config: %s", config)
+        return config
+
+    def get_codex_config(self) -> Dict[str, Any]:
+        """获取 CodexDriver 专用配置。"""
+        config = self._config.get("driver", {}).get("codex", {})
+        logger.debug("Codex config: %s", config)
         return config
 
     def get(self, key: str, default: Any = None) -> Any:

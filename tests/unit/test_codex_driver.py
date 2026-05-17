@@ -20,13 +20,13 @@ class TestCodexDriverInit:
         driver = CodexDriver()
         assert driver.model is None
         assert driver.sandbox is None
-        assert driver.approval is None
+        assert driver.full_auto is False
 
     def test_custom_init(self):
-        driver = CodexDriver(model="o4-mini", sandbox="workspace-write", approval="auto")
+        driver = CodexDriver(model="o4-mini", sandbox="workspace-write", full_auto=True)
         assert driver.model == "o4-mini"
         assert driver.sandbox == "workspace-write"
-        assert driver.approval == "auto"
+        assert driver.full_auto is True
 
 
 class TestCodexDriverBuildCommand:
@@ -55,12 +55,10 @@ class TestCodexDriverBuildCommand:
         idx = cmd.index("--sandbox")
         assert cmd[idx + 1] == "workspace-write"
 
-    def test_approval_flag(self):
-        driver = CodexDriver(approval="auto")
+    def test_full_auto_flag(self):
+        driver = CodexDriver(full_auto=True)
         cmd = driver._build_command(workdir="/tmp")
-        assert "--approval" in cmd
-        idx = cmd.index("--approval")
-        assert cmd[idx + 1] == "auto"
+        assert "--dangerously-bypass-approvals-and-sandbox" in cmd
 
     def test_output_flag(self):
         driver = CodexDriver()
@@ -260,7 +258,7 @@ class TestCodexDriverConfig:
                 "codex": {
                     "model": "o4-mini",
                     "sandbox": "workspace-write",
-                    "approval": "auto",
+                    "full_auto": True,
                 },
             }
         }
@@ -269,7 +267,7 @@ class TestCodexDriverConfig:
         assert isinstance(driver, CodexDriver)
         assert driver.model == "o4-mini"
         assert driver.sandbox == "workspace-write"
-        assert driver.approval == "auto"
+        assert driver.full_auto is True
 
     def test_create_codex_driver_minimal_config(self):
         from reloop.config import ReloopConfig

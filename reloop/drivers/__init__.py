@@ -44,7 +44,7 @@ def create_driver_from_type(driver_type: str, cfg: "ReloopConfig") -> Driver:
         return CodexDriver(
             model=codex_cfg.get("model"),
             sandbox=codex_cfg.get("sandbox"),
-            approval=codex_cfg.get("approval"),
+            full_auto=codex_cfg.get("full_auto", False),
         )
     else:
         raise ValueError(f"未知的 driver 类型: {driver_type}")

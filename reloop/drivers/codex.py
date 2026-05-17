@@ -30,31 +30,32 @@ class CodexDriver(Driver):
           codex:
             model: o4-mini
             sandbox: workspace-write
-            approval: auto
+            full_auto: true
     """
 
     def __init__(
         self,
         model: Optional[str] = None,
         sandbox: Optional[str] = None,
-        approval: Optional[str] = None,
+        full_auto: bool = False,
     ) -> None:
         """初始化 CodexDriver。
 
         Args:
-            model:    模型名称（如 o4-mini、o3、gpt-4o），不指定则使用 codex 默认配置
-            sandbox:  沙箱模式（workspace-write、read-only 等），不指定则使用默认策略
-            approval: 审批策略（auto、never），不指定则使用默认策略
+            model:     模型名称（如 o4-mini、o3），不指定则使用 codex 默认配置
+            sandbox:   沙箱模式（workspace-write / danger-full-access 等），不指定则使用默认策略
+            full_auto: True 时追加 --dangerously-bypass-approvals-and-sandbox，
+                       跳过所有确认提示，适合完全无人值守运行
         """
         self.model = model
         self.sandbox = sandbox
-        self.approval = approval
+        self.full_auto = full_auto
 
         logger.debug(
-            "CodexDriver initialized: model=%s, sandbox=%s, approval=%s",
+            "CodexDriver initialized: model=%s, sandbox=%s, full_auto=%s",
             model,
             sandbox,
-            approval,
+            full_auto,
         )
 
     def run(
@@ -109,8 +110,8 @@ class CodexDriver(Driver):
         if self.sandbox:
             cmd.extend(["--sandbox", self.sandbox])
 
-        if self.approval:
-            cmd.extend(["--approval", self.approval])
+        if self.full_auto:
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
 
         # 指定工作目录
         cmd.extend(["-C", workdir])

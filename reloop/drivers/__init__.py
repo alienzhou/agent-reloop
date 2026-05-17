@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from reloop.drivers.base import Driver
+from reloop.drivers.claudecode import ClaudeCodeDriver, ClaudeCodeDriverError
 from reloop.drivers.codex import CodexDriver, CodexDriverError
 from reloop.drivers.flick import FlickDriver, FlickDriverError
 from reloop.drivers.mock import CallbackMockDriver, MockDriver
@@ -15,6 +16,8 @@ __all__ = [
     "FlickDriverError",
     "CodexDriver",
     "CodexDriverError",
+    "ClaudeCodeDriver",
+    "ClaudeCodeDriverError",
     "create_driver",
     "create_driver_from_type",
 ]
@@ -28,7 +31,7 @@ def create_driver_from_type(
     """根据 driver 类型名和配置创建 Driver 实例。
 
     Args:
-        driver_type: driver 类型字符串（mock / flick / codex）
+        driver_type: driver 类型字符串（mock / flick / codex / claudecode）
         cfg:         ReloopConfig 配置实例
         role:        角色（executor / evaluator），用于获取 role-specific 配置
 
@@ -54,6 +57,14 @@ def create_driver_from_type(
             model=codex_cfg.get("model"),
             sandbox=codex_cfg.get("sandbox"),
             full_auto=codex_cfg.get("full_auto", False),
+        )
+    elif driver_type == "claudecode":
+        cc_cfg = cfg.get_claudecode_config(role)
+        return ClaudeCodeDriver(
+            model=cc_cfg.get("model"),
+            permission_mode=cc_cfg.get("permission_mode", "bypassPermissions"),
+            max_budget_usd=cc_cfg.get("max_budget_usd"),
+            add_dirs=cc_cfg.get("add_dirs"),
         )
     else:
         raise ValueError(f"未知的 driver 类型: {driver_type}")

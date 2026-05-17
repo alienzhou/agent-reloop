@@ -352,11 +352,11 @@ def run(
     ),
     executor_driver_opt: str = typer.Option(
         None, "--executor-driver",
-        help="executor 使用的 driver 类型 (mock/flick/codex)，覆盖配置文件中的设置"
+        help="executor 使用的 driver 类型 (mock/flick/codex/claudecode)，覆盖配置文件中的设置"
     ),
     evaluator_driver_opt: str = typer.Option(
         None, "--evaluator-driver",
-        help="evaluator 使用的 driver 类型 (mock/flick/codex)，覆盖配置文件中的设置；不指定则复用 executor driver"
+        help="evaluator 使用的 driver 类型 (mock/flick/codex/claudecode)，覆盖配置文件中的设置；不指定则复用 executor driver"
     ),
 ) -> None:
     """运行 Reloop 迭代循环。
@@ -368,9 +368,10 @@ def run(
 
     \b
     Driver 类型 (通过 --executor-driver / --evaluator-driver 或 reloop.yaml 配置):
-      mock    MockDriver (测试用，固定返回 "done")
-      flick   FlickDriver (CodeFlicker Duet，支持 workspace/model/mode/json_output)
-      codex   CodexDriver (OpenAI Codex CLI，支持 model/sandbox/full_auto)
+      mock        MockDriver (测试用，固定返回 "done")
+      flick       FlickDriver (CodeFlicker Duet，支持 workspace/model/mode/json_output)
+      codex       CodexDriver (OpenAI Codex CLI，支持 model/sandbox/full_auto)
+      claudecode  ClaudeCodeDriver (Claude Code CLI，支持 model/permission_mode/max_budget_usd/add_dirs)
 
     \b
     Per-role 配置 (reloop.yaml 中):
@@ -396,9 +397,26 @@ def run(
       danger-full-access    完全文件系统访问
 
     \b
+    ClaudeCodeDriver 可用模型 (2026-05):
+      sonnet              Claude Sonnet（快速，推荐日常使用）
+      opus                Claude Opus（最强推理能力）
+      claude-sonnet-4-6   Claude Sonnet 4.6（完整模型名）
+      claude-opus-4       Claude Opus 4（完整模型名）
+
+    \b
+    ClaudeCodeDriver permission_mode（默认 bypassPermissions，全自动无人干预）:
+      bypassPermissions   跳过所有权限检查（推荐自动化运行）
+      auto                自动处理简单权限，复杂操作仍需确认
+      default             默认交互式权限检查
+      dontAsk             不询问，自动拒绝危险操作
+      plan                规划模式，只做计划不执行
+      acceptEdits         自动接受文件编辑操作
+
+    \b
     Driver 选项:
-      --executor-driver codex   executor 使用 Codex CLI
-      --evaluator-driver flick  evaluator 使用 Flick（与 executor 不同）
+      --executor-driver codex       executor 使用 Codex CLI
+      --executor-driver claudecode  executor 使用 Claude Code
+      --evaluator-driver flick      evaluator 使用 Flick（与 executor 不同）
     """
     from reloop.config import load_config
     from reloop.core.loop import run_loop

@@ -358,6 +358,10 @@ def run(
         None, "--evaluator-driver",
         help="evaluator 使用的 driver 类型 (mock/flick/codex/claudecode/cursor)，覆盖配置文件中的设置；不指定则复用 executor driver"
     ),
+    checker_driver_opt: str = typer.Option(
+        None, "--checker-driver",
+        help="checker 使用的 driver 类型 (mock/flick/codex/claudecode/cursor)，覆盖配置文件中的设置；不指定则复用 evaluator driver"
+    ),
 ) -> None:
     """运行 Reloop 迭代循环。
 
@@ -376,12 +380,13 @@ def run(
 
     \b
     Per-role 配置 (reloop.yaml 中):
-      executor 和 evaluator 可以使用不同的 driver 类型或不同的配置。
-      在 yaml 中配置 driver.executor 和 driver.evaluator 即可，例如:
+      executor、evaluator 和 checker 可以使用不同的 driver 类型或不同的配置。
+      在 yaml 中配置 driver.executor、driver.evaluator 和 driver.checker 即可，例如:
         driver:
           codex: {model: gpt-5-codex-mini}        # 默认配置
           executor: {type: codex, codex: {model: gpt-5.1-codex}}  # executor 用更强模型
           evaluator: {type: codex, codex: {model: gpt-5-codex-mini}}  # evaluator 用轻量模型
+          checker: {type: cursor, cursor: {model: composer-2-fast}}  # checker 用 Cursor
 
     \b
     CodexDriver 可用模型 (2026-05):
@@ -433,10 +438,11 @@ def run(
       --executor-driver claudecode  executor 使用 Claude Code
       --executor-driver cursor      executor 使用 Cursor Agent
       --evaluator-driver flick      evaluator 使用 Flick（与 executor 不同）
+      --checker-driver cursor       checker 使用 Cursor Agent（与 evaluator 不同）
     """
     from reloop.config import load_config
     from reloop.core.loop import run_loop
-    from reloop.drivers import create_driver_from_type, create_evaluator_driver, create_executor_driver
+    from reloop.drivers import create_checker_driver, create_driver_from_type, create_evaluator_driver, create_executor_driver
 
     logger.info("Starting reloop run: max_iterations=%d, fresh=%s", max_iterations, fresh)
 
@@ -504,6 +510,24 @@ def run(
         print(f"❌ 创建 Evaluator Driver 失败: {e}")
         raise typer.Exit(1)
 
+    # 创建 Checker Driver（可与 evaluator 不同）
+    # 优先级：命令行参数 > 配置文件 driver.checker.type > 复用 evaluator driver
+    checker_driver = None
+    try:
+        if checker_driver_opt:
+            checker_driver = create_driver_from_type(checker_driver_opt, cfg, role="checker")
+            checker_driver_name = checker_driver_opt
+            print(f"✓ Checker Driver: {checker_driver_name}")
+        elif cfg.checker_driver_type != cfg.evaluator_driver_type:
+            checker_driver = create_checker_driver(cfg)
+            checker_driver_name = cfg.checker_driver_type
+            print(f"✓ Checker Driver: {checker_driver_name}")
+        # else: checker_driver 保持 None，loop 中会复用 evaluator_driver
+    except Exception as e:
+        logger.error("Failed to create checker driver: %s", e)
+        print(f"❌ 创建 Checker Driver 失败: {e}")
+        raise typer.Exit(1)
+
     # 验证 from_phase 参数
     if from_phase and from_phase not in ["evaluator", "checker"]:
         print(f"❌ 无效的 --from-phase 值: {from_phase}")
@@ -517,6 +541,7 @@ def run(
             eval_skill=eval_skill,
             executor_driver=executor_driver,
             evaluator_driver=evaluator_driver,
+            checker_driver=checker_driver,
             max_iterations=max_iterations,
             enable_git_commit=not no_git_commit,
             fresh=fresh,

@@ -84,6 +84,17 @@ class ReloopConfig:
         return self.driver_type
 
     @property
+    def checker_driver_type(self) -> str:
+        """获取 checker driver 类型。
+
+        优先读取 driver.checker.type，若未配置则回退到 driver.type。
+        """
+        checker_cfg = self._config.get("driver", {}).get("checker", {})
+        if checker_cfg and checker_cfg.get("type"):
+            return checker_cfg["type"]
+        return self.driver_type
+
+    @property
     def driver_config(self) -> Dict[str, Any]:
         """获取完整 driver 配置。"""
         return self._config.get("driver", {})
@@ -112,7 +123,7 @@ class ReloopConfig:
     def get_codex_config(self, role: Optional[str] = None) -> Dict[str, Any]:
         """获取 CodexDriver 专用配置。
 
-        当指定 role（executor / evaluator）时，从 driver.{role}.codex 合并 driver.codex；
+        当指定 role（executor / evaluator / checker）时，从 driver.{role}.codex 合并 driver.codex；
         role-specific 配置优先级更高，覆盖默认值。
 
         Args:

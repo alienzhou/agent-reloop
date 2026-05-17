@@ -41,7 +41,7 @@ driver:
     # sandbox: "disabled"  # 可选值: enabled, disabled
 
   # ===== Per-role 配置（可选）=====
-  # executor 和 evaluator 可以使用不同的 driver 类型或不同的配置。
+  # executor、evaluator 和 checker 可以使用不同的 driver 类型或不同的配置。
   # role-specific 配置会与上面的默认配置做深合并（role 的值覆盖默认值）。
   #
   # 示例 1：同类型 driver，不同模型
@@ -53,6 +53,10 @@ driver:
   #     type: cursor
   #     cursor:
   #       model: composer-2-fast      # evaluator 用默认快速模型
+  #   checker:
+  #     type: cursor
+  #     cursor:
+  #       model: composer-2-fast      # checker 用默认快速模型
   #
   # 示例 2：不同类型 driver
   #   executor:
@@ -63,6 +67,10 @@ driver:
   #     type: codex                   # evaluator 用 Codex
   #     codex:
   #       model: gpt-5-codex-mini
+  #   checker:
+  #     type: cursor                  # checker 用 Cursor
+  #     cursor:
+  #       model: composer-2-fast
   #
   # 示例 3：混合 driver
   #   executor:
@@ -73,3 +81,7 @@ driver:
   #     type: claudecode              # evaluator 用 Claude Code
   #     claudecode:
   #       model: sonnet
+  #   checker:
+  #     type: flick                   # checker 用 Flick
+  #     flick:
+  #       model: CLAUDE_4_5

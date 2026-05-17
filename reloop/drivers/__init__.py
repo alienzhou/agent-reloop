@@ -23,6 +23,9 @@ __all__ = [
     "CursorDriverError",
     "create_driver",
     "create_driver_from_type",
+    "create_executor_driver",
+    "create_evaluator_driver",
+    "create_checker_driver",
 ]
 
 
@@ -126,3 +129,19 @@ def create_evaluator_driver(cfg: "ReloopConfig") -> Driver:
     """
     evaluator_type = cfg.evaluator_driver_type
     return create_driver_from_type(evaluator_type, cfg, role="evaluator")
+
+
+def create_checker_driver(cfg: "ReloopConfig") -> Driver:
+    """创建 checker Driver 实例。
+
+    优先使用 driver.checker.type，若未配置则回退到 driver.type。
+    配置从 driver.checker.* 合并默认配置。
+
+    Args:
+        cfg: ReloopConfig 配置实例
+
+    Returns:
+        Driver 实例
+    """
+    checker_type = cfg.checker_driver_type
+    return create_driver_from_type(checker_type, cfg, role="checker")

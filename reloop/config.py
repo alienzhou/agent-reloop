@@ -14,6 +14,25 @@ import yaml
 logger = logging.getLogger(__name__)
 
 
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """递归合并两个字典，override 的值覆盖 base 的值。
+
+    Args:
+        base:    基础配置（回退值）
+        override: 覆盖配置（高优先级）
+
+    Returns:
+        合并后的新字典（不修改输入）
+    """
+    merged = dict(base)
+    for key, value in override.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 class ReloopConfig:
     """Reloop 配置管理类。"""
 
@@ -69,16 +88,46 @@ class ReloopConfig:
         """获取完整 driver 配置。"""
         return self._config.get("driver", {})
 
-    def get_flick_config(self) -> Dict[str, Any]:
-        """获取 FlickDriver 专用配置。"""
-        config = self._config.get("driver", {}).get("flick", {})
-        logger.debug("Flick config: %s", config)
+    def get_flick_config(self, role: Optional[str] = None) -> Dict[str, Any]:
+        """获取 FlickDriver 专用配置。
+
+        当指定 role（executor / evaluator）时，从 driver.{role}.flick 合并 driver.flick；
+        role-specific 配置优先级更高，覆盖默认值。
+
+        Args:
+            role: 角色（executor / evaluator），None 时只返回默认配置
+
+        Returns:
+            合并后的配置字典
+        """
+        base_config = self._config.get("driver", {}).get("flick", {})
+        if role:
+            role_config = self._config.get("driver", {}).get(role, {}).get("flick", {})
+            config = _deep_merge(base_config, role_config) if role_config else base_config
+        else:
+            config = base_config
+        logger.debug("Flick config (role=%s): %s", role, config)
         return config
 
-    def get_codex_config(self) -> Dict[str, Any]:
-        """获取 CodexDriver 专用配置。"""
-        config = self._config.get("driver", {}).get("codex", {})
-        logger.debug("Codex config: %s", config)
+    def get_codex_config(self, role: Optional[str] = None) -> Dict[str, Any]:
+        """获取 CodexDriver 专用配置。
+
+        当指定 role（executor / evaluator）时，从 driver.{role}.codex 合并 driver.codex；
+        role-specific 配置优先级更高，覆盖默认值。
+
+        Args:
+            role: 角色（executor / evaluator），None 时只返回默认配置
+
+        Returns:
+            合并后的配置字典
+        """
+        base_config = self._config.get("driver", {}).get("codex", {})
+        if role:
+            role_config = self._config.get("driver", {}).get(role, {}).get("codex", {})
+            config = _deep_merge(base_config, role_config) if role_config else base_config
+        else:
+            config = base_config
+        logger.debug("Codex config (role=%s): %s", role, config)
         return config
 
     def get(self, key: str, default: Any = None) -> Any:

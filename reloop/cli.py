@@ -411,7 +411,7 @@ def run(
     # 优先级：命令行参数 > 配置文件 driver.executor.type > 配置文件 driver.type
     try:
         if executor_driver_opt:
-            executor_driver = create_driver_from_type(executor_driver_opt, cfg)
+            executor_driver = create_driver_from_type(executor_driver_opt, cfg, role="executor")
             executor_driver_name = executor_driver_opt
         else:
             executor_driver = create_executor_driver(cfg)
@@ -428,7 +428,7 @@ def run(
     evaluator_driver = None
     try:
         if evaluator_driver_opt:
-            evaluator_driver = create_driver_from_type(evaluator_driver_opt, cfg)
+            evaluator_driver = create_driver_from_type(evaluator_driver_opt, cfg, role="evaluator")
             evaluator_driver_name = evaluator_driver_opt
             print(f"✓ Evaluator Driver: {evaluator_driver_name}")
         elif cfg.evaluator_driver_type != cfg.executor_driver_type:

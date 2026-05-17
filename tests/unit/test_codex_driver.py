@@ -284,3 +284,183 @@ class TestCodexDriverConfig:
         driver = create_driver_from_type("codex", cfg)
         assert isinstance(driver, CodexDriver)
         assert driver.model is None
+
+
+class TestDeepMerge:
+    """_deep_merge 工具函数测试"""
+
+    def test_simple_merge_override(self):
+        from reloop.config import _deep_merge
+
+        base = {"model": "o4-mini", "sandbox": "workspace-write"}
+        override = {"model": "o3"}
+        result = _deep_merge(base, override)
+        assert result == {"model": "o3", "sandbox": "workspace-write"}
+        # 不修改输入
+        assert base == {"model": "o4-mini", "sandbox": "workspace-write"}
+
+    def test_nested_merge(self):
+        from reloop.config import _deep_merge
+
+        base = {"flick": {"workspace": "w1", "mode": "agent"}}
+        override = {"flick": {"mode": "deep"}}
+        result = _deep_merge(base, override)
+        assert result == {"flick": {"workspace": "w1", "mode": "deep"}}
+
+    def test_empty_override(self):
+        from reloop.config import _deep_merge
+
+        base = {"model": "o4-mini"}
+        result = _deep_merge(base, {})
+        assert result == {"model": "o4-mini"}
+
+    def test_empty_base(self):
+        from reloop.config import _deep_merge
+
+        result = _deep_merge({}, {"model": "o3"})
+        assert result == {"model": "o3"}
+
+    def test_new_key_in_override(self):
+        from reloop.config import _deep_merge
+
+        base = {"model": "o4-mini"}
+        override = {"full_auto": True}
+        result = _deep_merge(base, override)
+        assert result == {"model": "o4-mini", "full_auto": True}
+
+
+class TestPerRoleCodexConfig:
+    """Per-role 配置的集成测试"""
+
+    def test_executor_uses_default_config_when_no_role_specific(self):
+        """没有 executor 专属配置时，使用默认配置"""
+        from reloop.config import ReloopConfig
+        from reloop.drivers import create_driver_from_type
+
+        cfg = ReloopConfig.__new__(ReloopConfig)
+        cfg._config = {
+            "driver": {
+                "type": "codex",
+                "codex": {"model": "o4-mini", "full_auto": True},
+            }
+        }
+
+        driver = create_driver_from_type("codex", cfg, role="executor")
+        assert driver.model == "o4-mini"
+        assert driver.full_auto is True
+
+    def test_executor_uses_role_specific_model(self):
+        """executor 有专属 model 配置时，覆盖默认值"""
+        from reloop.config import ReloopConfig
+        from reloop.drivers import create_driver_from_type
+
+        cfg = ReloopConfig.__new__(ReloopConfig)
+        cfg._config = {
+            "driver": {
+                "type": "codex",
+                "codex": {"model": "o4-mini", "full_auto": True},
+                "executor": {
+                    "type": "codex",
+                    "codex": {"model": "o3"},  # executor 用更强的模型
+                },
+            }
+        }
+
+        driver = create_driver_from_type("codex", cfg, role="executor")
+        assert driver.model == "o3"           # executor 专属覆盖
+        assert driver.full_auto is True        # 从默认继承
+
+    def test_evaluator_uses_role_specific_config(self):
+        """evaluator 有专属配置时，独立于 executor"""
+        from reloop.config import ReloopConfig
+        from reloop.drivers import create_driver_from_type
+
+        cfg = ReloopConfig.__new__(ReloopConfig)
+        cfg._config = {
+            "driver": {
+                "type": "codex",
+                "codex": {"model": "o4-mini", "sandbox": "workspace-write", "full_auto": True},
+                "executor": {
+                    "type": "codex",
+                    "codex": {"model": "o3"},
+                },
+                "evaluator": {
+                    "type": "codex",
+                    "codex": {"model": "o4-mini", "sandbox": "read-only"},
+                },
+            }
+        }
+
+        executor = create_driver_from_type("codex", cfg, role="executor")
+        evaluator = create_driver_from_type("codex", cfg, role="evaluator")
+
+        assert executor.model == "o3"               # executor 专属
+        assert executor.sandbox == "workspace-write"  # 从默认继承
+        assert executor.full_auto is True             # 从默认继承
+
+        assert evaluator.model == "o4-mini"           # evaluator 专属（与默认相同）
+        assert evaluator.sandbox == "read-only"        # evaluator 专属覆盖
+        assert evaluator.full_auto is True             # 从默认继承
+
+    def test_no_role_returns_default_config(self):
+        """不传 role 时，只返回默认配置（向后兼容）"""
+        from reloop.config import ReloopConfig
+        from reloop.drivers import create_driver_from_type
+
+        cfg = ReloopConfig.__new__(ReloopConfig)
+        cfg._config = {
+            "driver": {
+                "type": "codex",
+                "codex": {"model": "o4-mini"},
+                "executor": {
+                    "codex": {"model": "o3"},
+                },
+            }
+        }
+
+        # 不传 role → 只用默认配置，忽略 executor 专属
+        driver = create_driver_from_type("codex", cfg)
+        assert driver.model == "o4-mini"
+
+    def test_create_executor_driver_uses_role_config(self):
+        """create_executor_driver 自动传 role=executor"""
+        from reloop.config import ReloopConfig
+        from reloop.drivers import create_executor_driver
+
+        cfg = ReloopConfig.__new__(ReloopConfig)
+        cfg._config = {
+            "driver": {
+                "type": "codex",
+                "codex": {"model": "o4-mini", "full_auto": True},
+                "executor": {
+                    "type": "codex",
+                    "codex": {"model": "o3"},
+                },
+            }
+        }
+
+        driver = create_executor_driver(cfg)
+        assert driver.model == "o3"
+        assert driver.full_auto is True
+
+    def test_create_evaluator_driver_uses_role_config(self):
+        """create_evaluator_driver 自动传 role=evaluator"""
+        from reloop.config import ReloopConfig
+        from reloop.drivers import create_evaluator_driver
+
+        cfg = ReloopConfig.__new__(ReloopConfig)
+        cfg._config = {
+            "driver": {
+                "type": "codex",
+                "codex": {"model": "o4-mini", "full_auto": True},
+                "evaluator": {
+                    "type": "codex",
+                    "codex": {"model": "o4-mini", "sandbox": "read-only"},
+                },
+            }
+        }
+
+        driver = create_evaluator_driver(cfg)
+        assert driver.model == "o4-mini"
+        assert driver.sandbox == "read-only"
+        assert driver.full_auto is True

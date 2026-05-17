@@ -2,10 +2,10 @@
 # 复制为 reloop.yaml 并修改
 
 driver:
-  # Driver 类型: mock (测试) | flick (生产)
+  # Driver 类型: mock (测试) | flick (生产) | codex (OpenAI Codex CLI)
   type: flick
 
-  # FlickDriver 配置
+  # FlickDriver 配置（默认配置，executor 和 evaluator 共用的回退值）
   flick:
     # Duet Workspace ID 或路径（必需）
     # 可通过 `flick link workspace list` 查看
@@ -24,3 +24,38 @@ driver:
     # 可选：JSON 输出（默认 true）
     # 启用后输出结构化 JSON，便于解析
     json_output: true
+
+  # CodexDriver 配置（默认配置，executor 和 evaluator 共用的回退值）
+  codex:
+    # 可选：模型名称（不指定则使用 ~/.codex/config.toml 中的默认模型）
+    # 可选值: o4-mini, o3, 等
+    model: "o4-mini"
+
+    # 可选：沙箱模式
+    # 可选值: workspace-write, read-only, danger-full-access
+    sandbox: "workspace-write"
+
+    # 可选：完全自动运行（跳过所有确认提示）
+    full_auto: true
+
+  # ===== Per-role 配置（可选）=====
+  # executor 和 evaluator 可以使用不同的 driver 类型或不同的配置。
+  # role-specific 配置会与上面的默认配置做深合并（role 的值覆盖默认值）。
+  #
+  # 示例 1：同类型 driver，不同模型
+  #   executor:
+  #     type: codex
+  #     codex:
+  #       model: o3              # executor 用更强的模型
+  #   evaluator:
+  #     type: codex
+  #     codex:
+  #       model: o4-mini         # evaluator 用更便宜的模型
+  #
+  # 示例 2：不同类型 driver
+  #   executor:
+  #     type: codex              # executor 用 Codex CLI
+  #   evaluator:
+  #     type: flick              # evaluator 用 Flick
+  #     flick:
+  #       model: CLAUDE_4_5      # evaluator 用 Flick 的专属配置

@@ -49,7 +49,7 @@ project-root/
 
 ## Quick Start
 
-> **Status**: Core framework (`reloop init` / `reloop run` / `reloop status` / `reloop clean`) is implemented. Drivers for FlickLink (Duet Workspace) and a mock driver for tests are available; Claude Code / Codex / Gemini drivers are planned.
+> **Status**: Core framework is implemented. Drivers available: Flick, Claude Code, Codex, Cursor, Mock.
 
 ### 1. Initialize a Task
 
@@ -99,14 +99,20 @@ driver run --prompt "..." --workdir "..."
 ```
 
 
-| Driver      | Agent           | Priority     |
-| ----------- | --------------- | ------------ |
-| Claude Code | Claude Code CLI | High (first) |
-| Codex       | Codex CLI       | Medium       |
-| Gemini      | Gemini CLI      | Medium       |
+| Driver      | Agent           | Status  |
+| ----------- | --------------- | ------- |
+| Flick       | CodeFlicker Duet| Ready   |
+| Claude Code | Claude Code CLI | Ready   |
+| Codex       | OpenAI Codex CLI| Ready   |
+| Cursor      | Cursor Agent CLI| Ready   |
+| Mock        | Test fixture    | Ready   |
 
 
 Skills are injected directly into the prompt — no separate `--skill` parameter.
+
+## Testing
+
+Run `pytest tests/unit/ -q` after every code change. Smoke tests (`pytest tests/smoke/ --override-ini="addopts=" -m smoke`) cost real tokens — run only when needed.
 
 ## Design Docs
 

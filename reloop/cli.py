@@ -367,6 +367,35 @@ def run(
       --from-phase checker    从 Checker 开始，复用已有的 eval-report
 
     \b
+    Driver 类型 (通过 --executor-driver / --evaluator-driver 或 reloop.yaml 配置):
+      mock    MockDriver (测试用，固定返回 "done")
+      flick   FlickDriver (CodeFlicker Duet，支持 workspace/model/mode/json_output)
+      codex   CodexDriver (OpenAI Codex CLI，支持 model/sandbox/full_auto)
+
+    \b
+    Per-role 配置 (reloop.yaml 中):
+      executor 和 evaluator 可以使用不同的 driver 类型或不同的配置。
+      在 yaml 中配置 driver.executor 和 driver.evaluator 即可，例如:
+        driver:
+          codex: {model: gpt-5-codex-mini}        # 默认配置
+          executor: {type: codex, codex: {model: gpt-5.1-codex}}  # executor 用更强模型
+          evaluator: {type: codex, codex: {model: gpt-5-codex-mini}}  # evaluator 用轻量模型
+
+    \b
+    CodexDriver 可用模型 (2026-05):
+      gpt-5.5               最新前沿模型（推荐）
+      gpt-5.1-codex         Codex 专用模型
+      gpt-5.1-codex-max     Codex Max 模型（更强）
+      gpt-5-codex-mini      Codex Mini 模型（轻量快速）
+      o3                    OpenAI o3 推理模型
+
+    \b
+    CodexDriver sandbox 模式:
+      read-only             只读（不允许文件修改）
+      workspace-write       可写工作区（默认推荐）
+      danger-full-access    完全文件系统访问
+
+    \b
     Driver 选项:
       --executor-driver codex   executor 使用 Codex CLI
       --evaluator-driver flick  evaluator 使用 Flick（与 executor 不同）

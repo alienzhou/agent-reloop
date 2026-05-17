@@ -24,11 +24,20 @@ class CodexDriver(Driver):
     使用 `codex exec` 命令以非交互模式运行 Codex Agent。
     prompt 通过 stdin（"-" 参数）传入，避免 shell 转义问题。
 
+    可用模型（2026-05）:
+        - gpt-5.5               最新前沿模型（推荐）
+        - gpt-5.1-codex         Codex 专用模型
+        - gpt-5.1-codex-max     Codex Max 模型（更强）
+        - gpt-5-codex-mini      Codex Mini 模型（轻量快速）
+        - o3                    OpenAI o3 推理模型
+
+    不指定 model 时，使用 ~/.codex/config.toml 中的默认模型。
+
     示例配置 (reloop.yaml):
         driver:
           type: codex
           codex:
-            model: o4-mini
+            model: gpt-5-codex-mini
             sandbox: workspace-write
             full_auto: true
     """
@@ -42,8 +51,8 @@ class CodexDriver(Driver):
         """初始化 CodexDriver。
 
         Args:
-            model:     模型名称（如 o4-mini、o3），不指定则使用 codex 默认配置
-            sandbox:   沙箱模式（workspace-write / danger-full-access 等），不指定则使用默认策略
+            model:     模型名称（如 gpt-5-codex-mini、gpt-5.1-codex、o3），不指定则使用 codex 默认配置
+            sandbox:   沙箱模式（read-only / workspace-write / danger-full-access），不指定则使用默认策略
             full_auto: True 时追加 --dangerously-bypass-approvals-and-sandbox，
                        跳过所有确认提示，适合完全无人值守运行
         """

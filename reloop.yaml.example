@@ -28,14 +28,20 @@ driver:
   # CodexDriver 配置（默认配置，executor 和 evaluator 共用的回退值）
   codex:
     # 可选：模型名称（不指定则使用 ~/.codex/config.toml 中的默认模型）
-    # 可选值: o4-mini, o3, 等
-    model: "o4-mini"
+    # 可用模型（2026-05）:
+    #   gpt-5.5               最新前沿模型（推荐）
+    #   gpt-5.1-codex         Codex 专用模型
+    #   gpt-5.1-codex-max     Codex Max 模型（更强）
+    #   gpt-5-codex-mini      Codex Mini 模型（轻量快速）
+    #   o3                    OpenAI o3 推理模型
+    model: "gpt-5-codex-mini"
 
     # 可选：沙箱模式
-    # 可选值: workspace-write, read-only, danger-full-access
+    # 可选值: read-only, workspace-write, danger-full-access
     sandbox: "workspace-write"
 
     # 可选：完全自动运行（跳过所有确认提示）
+    # 映射到 codex exec 的 --dangerously-bypass-approvals-and-sandbox
     full_auto: true
 
   # ===== Per-role 配置（可选）=====
@@ -46,16 +52,16 @@ driver:
   #   executor:
   #     type: codex
   #     codex:
-  #       model: o3              # executor 用更强的模型
+  #       model: gpt-5.1-codex        # executor 用更强的模型
   #   evaluator:
   #     type: codex
   #     codex:
-  #       model: o4-mini         # evaluator 用更便宜的模型
+  #       model: gpt-5-codex-mini      # evaluator 用轻量的模型
   #
   # 示例 2：不同类型 driver
   #   executor:
-  #     type: codex              # executor 用 Codex CLI
+  #     type: codex                    # executor 用 Codex CLI
   #   evaluator:
-  #     type: flick              # evaluator 用 Flick
+  #     type: flick                    # evaluator 用 Flick
   #     flick:
-  #       model: CLAUDE_4_5      # evaluator 用 Flick 的专属配置
+  #       model: CLAUDE_4_5            # evaluator 用 Flick 的专属配置

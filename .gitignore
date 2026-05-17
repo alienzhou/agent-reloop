@@ -27,3 +27,9 @@ examples/_demo_workspace/
 
 reloop.yaml
 node_modules
+
+# Runtime artifacts (generated per task, never commit)
+task/
+run-sets/
+logs/
+specs/

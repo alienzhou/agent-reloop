@@ -151,6 +151,27 @@ class ReloopConfig:
         logger.debug("ClaudeCode config (role=%s): %s", role, config)
         return config
 
+    def get_cursor_config(self, role: Optional[str] = None) -> Dict[str, Any]:
+        """获取 CursorDriver 专用配置。
+
+        当指定 role（executor / evaluator）时，从 driver.{role}.cursor 合并
+        driver.cursor；role-specific 配置优先级更高，覆盖默认值。
+
+        Args:
+            role: 角色（executor / evaluator），None 时只返回默认配置
+
+        Returns:
+            合并后的配置字典
+        """
+        base_config = self._config.get("driver", {}).get("cursor", {})
+        if role:
+            role_config = self._config.get("driver", {}).get(role, {}).get("cursor", {})
+            config = _deep_merge(base_config, role_config) if role_config else base_config
+        else:
+            config = base_config
+        logger.debug("Cursor config (role=%s): %s", role, config)
+        return config
+
     def get(self, key: str, default: Any = None) -> Any:
         """获取配置值。
 

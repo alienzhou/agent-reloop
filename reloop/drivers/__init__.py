@@ -4,6 +4,7 @@ from typing import Optional
 
 from reloop.drivers.base import Driver
 from reloop.drivers.claudecode import ClaudeCodeDriver, ClaudeCodeDriverError
+from reloop.drivers.cursor import CursorDriver, CursorDriverError
 from reloop.drivers.codex import CodexDriver, CodexDriverError
 from reloop.drivers.flick import FlickDriver, FlickDriverError
 from reloop.drivers.mock import CallbackMockDriver, MockDriver
@@ -18,6 +19,8 @@ __all__ = [
     "CodexDriverError",
     "ClaudeCodeDriver",
     "ClaudeCodeDriverError",
+    "CursorDriver",
+    "CursorDriverError",
     "create_driver",
     "create_driver_from_type",
 ]
@@ -31,7 +34,7 @@ def create_driver_from_type(
     """根据 driver 类型名和配置创建 Driver 实例。
 
     Args:
-        driver_type: driver 类型字符串（mock / flick / codex / claudecode）
+        driver_type: driver 类型字符串（mock / flick / codex / claudecode / cursor）
         cfg:         ReloopConfig 配置实例
         role:        角色（executor / evaluator），用于获取 role-specific 配置
 
@@ -65,6 +68,14 @@ def create_driver_from_type(
             permission_mode=cc_cfg.get("permission_mode", "bypassPermissions"),
             max_budget_usd=cc_cfg.get("max_budget_usd"),
             add_dirs=cc_cfg.get("add_dirs"),
+        )
+    elif driver_type == "cursor":
+        cursor_cfg = cfg.get_cursor_config(role)
+        return CursorDriver(
+            model=cursor_cfg.get("model"),
+            yolo=cursor_cfg.get("yolo", True),
+            trust=cursor_cfg.get("trust", True),
+            sandbox=cursor_cfg.get("sandbox"),
         )
     else:
         raise ValueError(f"未知的 driver 类型: {driver_type}")

@@ -352,11 +352,11 @@ def run(
     ),
     executor_driver_opt: str = typer.Option(
         None, "--executor-driver",
-        help="executor 使用的 driver 类型 (mock/flick/codex/claudecode)，覆盖配置文件中的设置"
+        help="executor 使用的 driver 类型 (mock/flick/codex/claudecode/cursor)，覆盖配置文件中的设置"
     ),
     evaluator_driver_opt: str = typer.Option(
         None, "--evaluator-driver",
-        help="evaluator 使用的 driver 类型 (mock/flick/codex/claudecode)，覆盖配置文件中的设置；不指定则复用 executor driver"
+        help="evaluator 使用的 driver 类型 (mock/flick/codex/claudecode/cursor)，覆盖配置文件中的设置；不指定则复用 executor driver"
     ),
 ) -> None:
     """运行 Reloop 迭代循环。
@@ -372,6 +372,7 @@ def run(
       flick       FlickDriver (CodeFlicker Duet，支持 workspace/model/mode/json_output)
       codex       CodexDriver (OpenAI Codex CLI，支持 model/sandbox/full_auto)
       claudecode  ClaudeCodeDriver (Claude Code CLI，支持 model/permission_mode/max_budget_usd/add_dirs)
+      cursor      CursorDriver (Cursor Agent CLI，支持 model/yolo/trust/sandbox)
 
     \b
     Per-role 配置 (reloop.yaml 中):
@@ -413,9 +414,24 @@ def run(
       acceptEdits         自动接受文件编辑操作
 
     \b
+    CursorDriver 可用模型 (2026-05，常用):
+      composer-2-fast                   Composer 2 Fast（默认，推荐）
+      composer-2                       Composer 2（更强推理）
+      claude-4.6-sonnet-medium         Sonnet 4.6 1M
+      claude-opus-4-7-xhigh            Opus 4.7 1M Max Thinking
+      gpt-5.3-codex                    Codex 5.3
+      auto                             Auto（自动选择）
+
+    \b
+    CursorDriver 自动运行参数（默认全开启）:
+      --yolo     跳过所有确认，全自动运行（默认 True）
+      --trust    自动信任 workspace（默认 True）
+
+    \b
     Driver 选项:
       --executor-driver codex       executor 使用 Codex CLI
       --executor-driver claudecode  executor 使用 Claude Code
+      --executor-driver cursor      executor 使用 Cursor Agent
       --evaluator-driver flick      evaluator 使用 Flick（与 executor 不同）
     """
     from reloop.config import load_config

@@ -26,8 +26,9 @@ dev = [
 testpaths = ["tests"]
 markers = [
     "real_agent: tests that require a real Agent CLI (deselect by default)",
+    "smoke: minimal smoke tests that spend real API tokens (deselect by default)",
 ]
-addopts = "-m 'not real_agent'"
+addopts = "-m 'not real_agent and not smoke'"
 
 [tool.hatch.build.targets.wheel]
 packages = ["reloop"]
